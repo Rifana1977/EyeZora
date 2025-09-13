@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import cv2
-from logger import log_event   # ✅ import our logger
+from logger import log_event
+from sound_alert import play_warning_sound   # ✅ import sound function
 
 # Load YOLOv8 model
 model = YOLO("yolov8s.pt")
@@ -37,24 +38,27 @@ while True:
             if label in ["cell phone", "book", "paper"]:
                 msg = f"Warning {label} detected! (conf {conf:.2f})"
                 warnings.append(msg)
-                log_event(msg, "WARNING")   # ✅ log event
+                log_event(msg, "WARNING")
+                play_warning_sound()   # 🔊 imported from sound_alert.py
 
             # Allowed objects
             elif label in ["bottle", "cup", "glass", "steel glass"]:
                 msg = f"Detected: {label} ({conf:.2f})"
                 cv2.putText(frame, msg, (50, 100),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                log_event(msg, "INFO")   # ✅ log event
+                log_event(msg, "INFO")
 
     # Person detection rules
     if persons == 0:
         msg = "Warning No person detected!"
         warnings.append(msg)
         log_event(msg, "WARNING")
+        play_warning_sound()   # 🔊 imported
     elif persons > 1:
         msg = "Warning More than one person detected!"
         warnings.append(msg)
         log_event(msg, "WARNING")
+        play_warning_sound()   # 🔊 imported
     else:
         log_event("Exactly one person detected.", "INFO")
 
