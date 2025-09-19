@@ -1,0 +1,13 @@
+train: D:/ME/EyeZora/face_detection/train/images
+val: D:/ME/EyeZora/face_detection/valid/images
+test: D:/ME/EyeZora/face_detection/test/images
+
+nc: 1
+names: ["face"]
+
+roboflow:
+  workspace: eyezora
+  project: person-detection-h7xyl-aguti
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/eyezora/person-detection-h7xyl-aguti/dataset/2
