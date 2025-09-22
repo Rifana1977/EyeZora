@@ -48,7 +48,6 @@ while True:
     results = model(frame, conf=0.5)
     persons = 0
     warnings = []
-
     for r in results:
         boxes = r.boxes
         for box in boxes:
@@ -126,7 +125,6 @@ while True:
         play_warning_sound()
     else:
         log_event("Exactly one person detected.", "INFO")
-
     # Show warnings on screen (dynamic spacing)
     y_offset = 50
     for w in warnings:
