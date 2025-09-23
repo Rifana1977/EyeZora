@@ -54,7 +54,6 @@ while True:
             cls = int(box.cls[0])
             conf = float(box.conf[0])
             label = model.names[cls].lower()
-
             if label == "person":
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                 area = (x2 - x1) * (y2 - y1)
