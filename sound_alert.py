@@ -3,4 +3,4 @@ import winsound
 
 def play_warning_sound():
     """Plays a short beep for warnings"""
-    winsound.Beep(1000, 500)  # 1000 Hz frequency, 500ms duration
+    winsound.Beep(1000, 600)  # 1000 Hz frequency, 500ms duration
