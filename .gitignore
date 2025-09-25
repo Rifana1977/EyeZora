@@ -1,3 +1,5 @@
 __pycache__/
 *.log
 yolov8s.pt
+yolov8n.pt
+yolov8s.pt
