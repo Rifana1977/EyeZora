@@ -130,7 +130,6 @@ while True:
         cv2.putText(frame, w, (50, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         y_offset += 35  # smaller spacing to avoid overlap
-
     # Display output
     cv2.imshow("Exam Monitor", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
