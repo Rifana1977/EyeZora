@@ -3,3 +3,5 @@ __pycache__/
 yolov8s.pt
 yolov8n.pt
 yolo11n.pt
+best.pt
+best_train.pt
