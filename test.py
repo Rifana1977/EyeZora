@@ -7,7 +7,7 @@ from logger import log_event
 # ------------------------------
 # Configuration
 # ------------------------------
-MODEL_PATH = "best.pt"
+MODEL_PATH = "best_train.pt"
 FRAME_WIDTH = 640        # webcam width
 FRAME_HEIGHT = 480       # webcam height
 FRAME_SKIP = 1           # process every Nth frame (0 = every frame)
