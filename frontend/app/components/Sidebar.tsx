@@ -1,64 +1,57 @@
 "use client";
 
+import { useRouter, usePathname } from "next/navigation";
+
 export default function Sidebar({
   role,
 }: {
   role: "student" | "admin";
 }) {
-  return (
-    <aside
-      className="
-        w-72 min-h-screen
-        bg-gradient-to-b from-black via-[#0a1633] to-black
-        border-r border-white/10
-        px-6 py-8
-      "
-    >
-      {/* Brand */}
-      <div className="mb-12">
-        <h1 className="text-2xl font-extrabold text-white tracking-wide">
-          EYEZORA
-        </h1>
-      </div>
+  const router = useRouter();
+  const pathname = usePathname();
 
-      {/* Navigation */}
-      <nav className="space-y-3">
-        {role === "student" ? (
-          <>
-            <Item label="My Exam" active />
-            <Item label="Instructions" />
-            <Item label="Result" />
-          </>
-        ) : (
-          <>
-            <Item label="Dashboard" active />
-            <Item label="Create Test" />
-            <Item label="Reports" />
-          </>
-        )}
-      </nav>
+  const isActive = (path: string) => pathname === path;
+
+  return (
+    <aside className="w-72 min-h-screen bg-gradient-to-b from-black via-[#0a1633] to-black px-6 py-8">
+      <h1 className="text-2xl font-extrabold text-white mb-12">EYEZORA</h1>
+
+      {role === "admin" && (
+        <>
+          <NavItem
+            label="Dashboard"
+            active={isActive("/dashboard/admin")}
+            onClick={() => router.push("/dashboard/admin")}
+          />
+          <NavItem
+            label="Create Test"
+            active={isActive("/dashboard/admin/questions")}
+            onClick={() => router.push("/dashboard/admin/questions")}
+          />
+        </>
+      )}
     </aside>
   );
 }
 
-function Item({
+function NavItem({
   label,
-  active = false,
+  active,
+  onClick,
 }: {
   label: string;
-  active?: boolean;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
     <div
-      className={`
-        px-4 py-3 rounded-xl cursor-pointer
-        font-medium transition-all
+      onClick={onClick}
+      className={`px-4 py-3 rounded-xl cursor-pointer mb-2 font-medium
         ${
           active
-            ? "bg-gradient-to-r from-[#5c145a] to-[#7a1c6b] text-white shadow-lg"
-            : "text-white/70 hover:text-white hover:bg-white/10"
-        }
-      `}
+            ? "bg-purple-700 text-white"
+            : "text-white/70 hover:bg-white/10 hover:text-white"
+        }`}
     >
       {label}
     </div>
