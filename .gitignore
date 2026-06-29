@@ -8,3 +8,4 @@ best_train.pt
 .env
 best_object_2.pt
 best_object.pt
+node_modules/

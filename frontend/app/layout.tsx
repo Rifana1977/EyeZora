@@ -1,5 +1,6 @@
 import "./globals.css";
 import { Inter } from "next/font/google";
+import ToastContainer from "./components/ui/Toast";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -7,17 +8,29 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "EYEZORA",
+  title: "EyeZora — AI Exam Proctoring",
+  description: "Secure, AI-powered online examination monitoring system",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var theme = localStorage.getItem('ez_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', theme);
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
+      <body className={inter.className}>
+        {children}
+        <ToastContainer />
+      </body>
     </html>
   );
 }

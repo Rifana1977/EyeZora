@@ -1,34 +1,45 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config();
+const dotenv = require("dotenv");
+const path = require("path");
+const connectDB = require("./config/db");
 
-// 👇 import routes
-const questionRoutes = require("./routes/questionRoutes");
+dotenv.config();
+connectDB();
 
-// 👇 create app
 const app = express();
 
-// 👇 middlewares
-app.use(cors());
-app.use(express.json());
+// ── Middleware ────────────────────────────────────────────────────────────────
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// 👇 routes
+// Serve exam log files statically (admin can download)
+app.use("/exam_logs", express.static(path.join(__dirname, "exam_logs")));
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/questions", require("./routes/questionRoutes"));
+app.use("/api/student", require("./routes/studentRoutes"));
+app.use("/api/session", require("./routes/sessionRoutes"));
 
-// 👇 test route
-app.get("/", (req, res) => {
-  res.send("Backend is running");
+// ── Health Check ──────────────────────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({ status: "EyeZora backend running", timestamp: new Date() });
 });
 
-// 👇 MongoDB connection (ONLY ONCE)
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("database connected successfully"))
-  .catch(err => console.log("database connection failed", err));
+// ── Global Error Handler ──────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
 
-// 👇 start server
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log("server listening on port", PORT);
+  console.log(`✅ EyeZora backend running on port ${PORT}`);
 });

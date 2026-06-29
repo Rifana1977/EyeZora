@@ -16,6 +16,7 @@ exports.createQuestion = async (req, res) => {
       return res.status(400).json({ message: "Invalid question data" });
     }
 
+    
     const question = await Question.create({
       examId,
       questionText,

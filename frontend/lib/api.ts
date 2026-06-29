@@ -1,27 +1,230 @@
-const BASE_URL = "http://localhost:5000/api";
+/**
+ * api.ts — Typed API wrapper with automatic auth header injection.
+ * All API calls go through these helpers.
+ */
 
-export async function createQuestion(data: any) {
-  const res = await fetch(`${BASE_URL}/questions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
+import { getToken } from "./auth";
 
-  if (!res.ok) {
-    throw new Error("Failed to create question");
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+export const AI_BASE = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:8000";
+
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
   }
-
-  return res.json();
 }
 
-export async function getQuestionsByExam(examId: string) {
-  const res = await fetch(`${BASE_URL}/questions/${examId}`);
+async function request<T>(
+  url: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
 
-  if (!res.ok) {
-    throw new Error("Failed to fetch questions");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
-  return res.json();
+  const res = await fetch(url, { ...options, headers });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
+  }
+
+  return res.json() as Promise<T>;
 }
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
+export const authApi = {
+  adminLogin: (email: string, password: string) =>
+    request<{ token: string; user: any }>(`${API_BASE}/api/auth/admin/login`, {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  studentLogin: (identifier: string, password: string) =>
+    request<{ token: string; user: any }>(`${API_BASE}/api/auth/student/login`, {
+      method: "POST",
+      body: JSON.stringify({ identifier, password }),
+    }),
+};
+
+// ── Admin ──────────────────────────────────────────────────────────────────────
+
+export const adminApi = {
+  getStats: () => request<any>(`${API_BASE}/api/admin/stats`),
+
+  // Exams
+  getAllExams: () => request<any[]>(`${API_BASE}/api/admin/exams`),
+  createExam: (title: string, duration: number) =>
+    request<any>(`${API_BASE}/api/admin/exam`, {
+      method: "POST",
+      body: JSON.stringify({ title, duration }),
+    }),
+  updateExam: (id: string, title: string, duration: number) =>
+    request<any>(`${API_BASE}/api/admin/exam/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ title, duration }),
+    }),
+  deleteExam: (id: string) =>
+    request<any>(`${API_BASE}/api/admin/exam/${id}`, { method: "DELETE" }),
+
+  // Questions
+  getTestQuestions: (testId: string, page = 1, limit = 20) =>
+    request<any>(`${API_BASE}/api/admin/test/${testId}/questions?page=${page}&limit=${limit}`),
+  updateQuestion: (id: string, data: any) =>
+    request<any>(`${API_BASE}/api/admin/question/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteQuestion: (id: string) =>
+    request<any>(`${API_BASE}/api/admin/question/${id}`, { method: "DELETE" }),
+  addQuestion: (data: any) =>
+    request<any>(`${API_BASE}/api/admin/question`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Students
+  getStudents: () => request<any[]>(`${API_BASE}/api/admin/students`),
+  registerStudent: (data: any) =>
+    request<any>(`${API_BASE}/api/admin/students`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateStudent: (id: string, data: any) =>
+    request<any>(`${API_BASE}/api/admin/students/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteStudent: (id: string) =>
+    request<any>(`${API_BASE}/api/admin/students/${id}`, { method: "DELETE" }),
+
+  // Assignments
+  getAssignments: (params?: {
+    search?: string;
+    examId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set("search", params.search);
+    if (params?.examId) qs.set("examId", params.examId);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return request<any>(`${API_BASE}/api/admin/assignments?${qs}`);
+  },
+  createAssignment: (data: any) =>
+    request<any>(`${API_BASE}/api/admin/assignments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateAssignment: (id: string, data: any) =>
+    request<any>(`${API_BASE}/api/admin/assignments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  cancelAssignment: (id: string) =>
+    request<any>(`${API_BASE}/api/admin/assignments/${id}`, { method: "DELETE" }),
+  getStudentAssignment: (studentId: string) =>
+    request<any>(`${API_BASE}/api/admin/assignments/student/${studentId}`),
+
+  // Monitoring
+  getSessions: () => request<any[]>(`${API_BASE}/api/admin/sessions`),
+  getSessionReport: (id: string) =>
+    request<any>(`${API_BASE}/api/admin/sessions/${id}/report`),
+};
+
+// ── Student ────────────────────────────────────────────────────────────────────
+
+export const studentApi = {
+  getExamQuestions: (examId: string) =>
+    request<any[]>(`${API_BASE}/api/student/exam/${examId}`),
+};
+
+// ── Session ────────────────────────────────────────────────────────────────────
+
+export const sessionApi = {
+  start: (examId: string, examTitle: string, assignmentId?: string) =>
+    request<{ sessionId: string; resumed: boolean }>(`${API_BASE}/api/session/start`, {
+      method: "POST",
+      body: JSON.stringify({ examId, examTitle, assignmentId }),
+    }),
+
+  logEvent: (sessionId: string, event: string, confidence = 100) =>
+    request<any>(`${API_BASE}/api/session/log`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId, event, confidence }),
+    }),
+
+  end: (sessionId: string, answers: number[], examId: string) =>
+    request<any>(`${API_BASE}/api/session/end`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId, answers, examId }),
+    }),
+
+  /**
+   * Upload video and/or audio recordings together in one request.
+   */
+  uploadRecording: async (
+    sessionId: string,
+    videoBlob: Blob | null,
+    audioBlob: Blob | null
+  ): Promise<{ videoUrl: string | null; audioUrl: string | null }> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("sessionId", sessionId);
+    if (videoBlob) {
+      formData.append("video", videoBlob, "recording.webm");
+    }
+    if (audioBlob) {
+      formData.append("audio", audioBlob, "audio.webm");
+    }
+    const res = await fetch(`${API_BASE}/api/session/recording`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token || ""}` },
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Recording upload failed");
+    return res.json();
+  },
+};
+
+// ── AI Service ─────────────────────────────────────────────────────────────────
+
+export const aiApi = {
+  analyzeFrame: async (
+    imageBase64: string,
+    studentId: string,
+    examId: string,
+    sessionId?: string
+  ) => {
+    try {
+      const res = await fetch(`${AI_BASE}/analyze-frame`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: imageBase64,
+          student_id: studentId,
+          exam_id: examId,
+          session_id: sessionId,
+        }),
+      });
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+};
+
+export { ApiError };

@@ -1,13 +1,16 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import Sidebar from "@/app/components/Sidebar";
 
+const EXAM_ID = "6967d63629e44c0adf1b5706"; 
+// 👆 MUST be the SAME examId that admin used
+
 export default function StudentDashboard() {
+  const router = useRouter();
+
   return (
-    <div
-      className="
-        flex min-h-screen
-        bg-gradient-to-br from-black via-[#0a1633] to-black
-      "
-    >
+    <div className="flex min-h-screen bg-gradient-to-br from-black via-[#0a1633] to-black">
       {/* Sidebar */}
       <Sidebar role="student" />
 
@@ -18,14 +21,7 @@ export default function StudentDashboard() {
         </h1>
 
         {/* Exam Card */}
-        <div
-          className="
-            bg-white/90 backdrop-blur-xl
-            rounded-3xl shadow-2xl
-            p-8 max-w-4xl
-            border border-black/10
-          "
-        >
+        <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl p-8 max-w-4xl border border-black/10">
           <h2 className="text-2xl font-bold text-black mb-2">
             AI Proctored Examination
           </h2>
@@ -54,8 +50,11 @@ export default function StudentDashboard() {
             </ul>
           </div>
 
-          {/* Start Button */}
+          {/* ✅ FIXED START BUTTON */}
           <button
+            onClick={() =>
+              router.push(`/dashboard/student/exam/${EXAM_ID}`)
+            }
             className="
               w-full py-4 rounded-2xl
               text-white text-lg font-semibold

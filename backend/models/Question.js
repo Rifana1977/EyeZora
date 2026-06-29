@@ -4,20 +4,26 @@ const questionSchema = new mongoose.Schema({
   examId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Exam",
-    required: true
+    required: true,
+    index: true,
+  },
+  questionNumber: {
+    type: Number,
+    required: true,
   },
   questionText: {
     type: String,
-    required: true
+    required: true,
   },
-  options: {
-    type: [Object], // or [String] depending on your design
-    required: true
-  },
+  options: [String],
   correctOptionIndex: {
     type: Number,
-    required: true
-  }
+    required: true,
+  },
+  marks: {
+    type: Number,
+    default: 1,
+  },
 });
 
 module.exports = mongoose.model("Question", questionSchema);
