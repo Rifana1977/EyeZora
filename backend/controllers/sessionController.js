@@ -13,7 +13,6 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
 // ─── Start Exam Session ────────────────────────────────────────────────────────
 
 /**
@@ -92,13 +91,13 @@ exports.logEvent = async (req, res) => {
     ];
     const mediumSeverityEvents = [
       "LOOKING_AWAY", "WINDOW_BLUR", "WINDOW_FOCUS_LOST",
-      "WINDOW_FOCUS_RESTORED", "EXTENSION_WARNING",
+      "WINDOW_FOCUS_RESTORED", "EXTENSION_WARNING", "MONITORING_FAILURE",
     ];
     const severity = highSeverityEvents.includes(event)
       ? "High"
       : mediumSeverityEvents.includes(event)
-      ? "Medium"
-      : "Low";
+        ? "Medium"
+        : "Low";
 
     // Create log entry
     await ProctoringLog.create({
@@ -110,8 +109,11 @@ exports.logEvent = async (req, res) => {
       severity,
     });
 
-    // Update session counters — WINDOW_FOCUS_RESTORED is informational (no violation count)
-    const nonViolationEvents = ["WINDOW_FOCUS_RESTORED", "EXAM_START", "EXAM_END", "CAMERA_GRANTED"];
+    // Update session counters — WINDOW_FOCUS_RESTORED, MONITORING_FAILURE, etc. are informational
+    const nonViolationEvents = [
+      "WINDOW_FOCUS_RESTORED", "EXAM_START", "EXAM_END", "CAMERA_GRANTED",
+      "MONITORING_FAILURE", "MONITORING_RESTORED"
+    ];
     const counterMap = {
       MULTIPLE_FACES: "multipleFacesCount",
       NO_FACE: "noFaceCount",

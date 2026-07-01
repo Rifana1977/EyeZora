@@ -54,6 +54,24 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ identifier, password }),
     }),
+
+  forgotPassword: (email: string) =>
+    request<{ message: string }>(`${API_BASE}/api/auth/student/forgot-password`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, email: string, newPassword: string) =>
+    request<{ message: string }>(`${API_BASE}/api/auth/student/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ token, email, newPassword }),
+    }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ message: string }>(`${API_BASE}/api/auth/student/change-password`, {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 };
 
 // ── Admin ──────────────────────────────────────────────────────────────────────
@@ -137,11 +155,50 @@ export const adminApi = {
     request<any>(`${API_BASE}/api/admin/assignments/${id}`, { method: "DELETE" }),
   getStudentAssignment: (studentId: string) =>
     request<any>(`${API_BASE}/api/admin/assignments/student/${studentId}`),
+  bulkAssign: (data: { studentObjectIds: string[]; examId: string; startTime: string; duration: number; notes?: string }) =>
+    request<any>(`${API_BASE}/api/admin/assignments/bulk`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Monitoring
   getSessions: () => request<any[]>(`${API_BASE}/api/admin/sessions`),
   getSessionReport: (id: string) =>
     request<any>(`${API_BASE}/api/admin/sessions/${id}/report`),
+
+  // Results
+  getResults: (examId?: string) => {
+    const qs = examId ? `?examId=${examId}` : "";
+    return request<any[]>(`${API_BASE}/api/admin/results${qs}`);
+  },
+  publishResults: (data: { examId?: string; submissionIds?: string[] }) =>
+    request<any>(`${API_BASE}/api/admin/results/publish`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  unpublishResults: (data: { examId?: string; submissionIds?: string[] }) =>
+    request<any>(`${API_BASE}/api/admin/results/unpublish`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Bulk import
+  bulkImportStudents: async (file: File, sendEmails: boolean): Promise<any> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("sendEmails", String(sendEmails));
+    const res = await fetch(`${API_BASE}/api/admin/students/bulk-import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token || ""}` },
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: "Import failed" }));
+      throw new Error(body.error || "Import failed");
+    }
+    return res.json();
+  },
 };
 
 // ── Student ────────────────────────────────────────────────────────────────────
@@ -149,6 +206,9 @@ export const adminApi = {
 export const studentApi = {
   getExamQuestions: (examId: string) =>
     request<any[]>(`${API_BASE}/api/student/exam/${examId}`),
+
+  getMyResults: () =>
+    request<any[]>(`${API_BASE}/api/student/results`),
 };
 
 // ── Session ────────────────────────────────────────────────────────────────────
@@ -223,6 +283,18 @@ export const aiApi = {
       return res.json();
     } catch {
       return null;
+    }
+  },
+
+  /** Check if the Python AI service is reachable */
+  healthCheck: async (): Promise<{ available: boolean; modelsLoaded: boolean }> => {
+    try {
+      const res = await fetch(`${AI_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok) return { available: false, modelsLoaded: false };
+      const data = await res.json();
+      return { available: true, modelsLoaded: data.models_loaded === true };
+    } catch {
+      return { available: false, modelsLoaded: false };
     }
   },
 };

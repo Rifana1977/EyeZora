@@ -1,0 +1,30 @@
+═══════════════════════════════════════════════════════════════
+                    EYEZORA EXAM PROCTORING LOG                
+═══════════════════════════════════════════════════════════════
+Student ID   : mut1
+Student Name : rifana
+Exam         : aptitude
+Session ID   : 6a43f5273b09d4aa18a44248
+Start Time   : 2026-06-30T16:56:07.467Z
+End Time     : 2026-06-30T16:56:39.528Z
+Duration     : 0 min 32 sec
+Risk Level   : Low
+
+─── VIOLATION SUMMARY ──────────────────────────────────────────
+Multiple Faces      : 0
+No Face Detected    : 0
+Looking Away        : 0
+Phone Detected      : 0
+Suspicious Movement : 0
+Tab Switches        : 0
+Window Focus Lost   : 0
+Full-Screen Exits   : 1
+Extension Warnings  : 0
+TOTAL VIOLATIONS    : 1
+
+─── EVENT LOG ──────────────────────────────────────────────────
+Timestamp                  | Event                     | Conf | Severity
+───────────────────────────|───────────────────────────|──────|─────────
+30/6/2026, 10:26:07 pm     | Exam Started              | 100% | Low
+30/6/2026, 10:26:07 pm     | Fullscreen Exit           | 100% | High
+═══════════════════════════════════════════════════════════════

@@ -136,10 +136,33 @@ export default function PreExamPage() {
 
     // ── Step 3: Fullscreen ──────────────────────────────────────────────
     try {
-      await document.documentElement.requestFullscreen();
-      if (!document.fullscreenElement) {
-        throw new Error("Fullscreen not entered");
-      }
+      const enterFullscreenPromise = new Promise<void>((resolve, reject) => {
+        const onFsChange = () => {
+          if (document.fullscreenElement) {
+            document.removeEventListener("fullscreenchange", onFsChange);
+            resolve();
+          }
+        };
+        document.addEventListener("fullscreenchange", onFsChange);
+        
+        document.documentElement.requestFullscreen()
+          .catch((err) => {
+            document.removeEventListener("fullscreenchange", onFsChange);
+            reject(err);
+          });
+
+        // Safety timeout of 3 seconds
+        setTimeout(() => {
+          document.removeEventListener("fullscreenchange", onFsChange);
+          if (document.fullscreenElement) {
+            resolve();
+          } else {
+            reject(new Error("Fullscreen request timed out"));
+          }
+        }, 3000);
+      });
+
+      await enterFullscreenPromise;
       setPermState(p => ({ ...p, fullscreen: "granted" }));
     } catch {
       setPermState(p => ({ ...p, fullscreen: "denied" }));

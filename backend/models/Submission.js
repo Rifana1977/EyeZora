@@ -28,6 +28,10 @@ const submissionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    resultsPublished: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

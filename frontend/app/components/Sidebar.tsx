@@ -12,10 +12,12 @@ const adminLinks = [
   { label: "Assign Exams", href: "/admin/assign-exams", icon: "📋" },
   { label: "Monitoring", href: "/admin/monitoring", icon: "◉" },
   { label: "Reports", href: "/admin/reports", icon: "📊" },
+  { label: "Settings", href: "/admin/settings", icon: "⚙" },
 ];
 
 const studentLinks = [
   { label: "My Exam", href: "/student/exam", icon: "✎" },
+  { label: "My Results", href: "/student/results", icon: "📊" },
 ];
 
 export default function Sidebar({ role }: { role: "student" | "admin" }) {

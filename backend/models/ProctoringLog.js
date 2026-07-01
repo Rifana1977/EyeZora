@@ -46,6 +46,8 @@ const proctoringLogSchema = new mongoose.Schema({
       "CAMERA_DISCONNECTED",
       "CAMERA_GRANTED",
       "MICROPHONE_DISABLED",
+      "MONITORING_FAILURE",
+      "MONITORING_RESTORED",
       // ── Session Lifecycle ────────────────────────
       "EXAM_START",
       "EXAM_END",

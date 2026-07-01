@@ -106,20 +106,22 @@ exports.createAssignment = async (req, res) => {
     const exam = await Exam.findById(examId);
     if (!exam) return res.status(404).json({ error: "Exam not found" });
 
-    // Prevent duplicate active assignment for same student+exam
-    const existingActive = await ExamAssignment.findOne({
-      studentId: student.studentId,
-      examId,
-      status: { $in: ["assigned", "upcoming", "started"] },
-    });
-    if (existingActive) {
-      return res.status(409).json({
-        error: "This student already has an active assignment for this exam. Cancel the existing one first.",
-      });
-    }
-
     if (!endTime) {
       endTime = new Date(new Date(startTime).getTime() + Number(duration) * 60 * 1000);
+    }
+
+    // Conflict detection: check if this student has overlapping assignment for ANY exam
+    const conflict = await ExamAssignment.findOne({
+      studentId: student.studentId,
+      status: { $in: ["assigned", "upcoming", "started"] },
+      $or: [
+        { startTime: { $lt: new Date(endTime) }, endTime: { $gt: new Date(startTime) } },
+      ],
+    });
+    if (conflict) {
+      return res.status(409).json({
+        error: `Scheduling conflict: student already has an assignment from ${new Date(conflict.startTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} to ${new Date(conflict.endTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`,
+      });
     }
 
     const assignment = await ExamAssignment.create({
@@ -251,6 +253,95 @@ exports.getStudentAssignment = async (req, res) => {
     res.json({ assignment: obj });
   } catch (err) {
     console.error("getStudentAssignment error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Bulk Create Assignments ───────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/assignments/bulk
+ * Body: { studentObjectIds: [], examId, startTime, duration, notes }
+ * Assigns the same exam+window to multiple students.
+ * Returns per-student success/failure.
+ */
+exports.bulkCreateAssignment = async (req, res) => {
+  try {
+    const { studentObjectIds, examId, startTime, duration, notes } = req.body;
+
+    if (!studentObjectIds || !Array.isArray(studentObjectIds) || studentObjectIds.length === 0) {
+      return res.status(400).json({ error: "studentObjectIds array is required" });
+    }
+    if (!examId || !startTime || !duration) {
+      return res.status(400).json({ error: "examId, startTime, and duration are required" });
+    }
+
+    const exam = await Exam.findById(examId);
+    if (!exam) return res.status(404).json({ error: "Exam not found" });
+
+    const endTime = new Date(new Date(startTime).getTime() + Number(duration) * 60 * 1000);
+
+    const results = [];
+    const errors = [];
+
+    for (const studentObjectId of studentObjectIds) {
+      try {
+        const student = await Student.findById(studentObjectId);
+        if (!student) {
+          errors.push({ studentObjectId, error: "Student not found" });
+          continue;
+        }
+
+        // Conflict detection: check if this student has overlapping assignment for ANY exam
+        const conflict = await ExamAssignment.findOne({
+          studentId: student.studentId,
+          status: { $in: ["assigned", "upcoming", "started"] },
+          $or: [
+            { startTime: { $lt: endTime }, endTime: { $gt: new Date(startTime) } },
+          ],
+        });
+
+        if (conflict) {
+          errors.push({
+            studentObjectId,
+            studentId: student.studentId,
+            studentName: student.name,
+            error: `Scheduling conflict: already has an assignment from ${conflict.startTime.toISOString()} to ${conflict.endTime.toISOString()}`,
+          });
+          continue;
+        }
+
+        const assignment = await ExamAssignment.create({
+          studentId: student.studentId,
+          studentObjectId,
+          examId,
+          startTime: new Date(startTime),
+          endTime,
+          duration: Number(duration),
+          notes: notes || "",
+          assignedBy: req.user?.email || "admin",
+        });
+
+        results.push({
+          studentObjectId,
+          studentId: student.studentId,
+          studentName: student.name,
+          assignmentId: assignment._id,
+          status: "assigned",
+        });
+      } catch (err) {
+        errors.push({ studentObjectId, error: err.message });
+      }
+    }
+
+    res.status(201).json({
+      assigned: results.length,
+      failed: errors.length,
+      results,
+      errors,
+    });
+  } catch (err) {
+    console.error("bulkCreateAssignment error:", err);
     res.status(500).json({ error: err.message });
   }
 };

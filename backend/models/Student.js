@@ -30,6 +30,18 @@ const studentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    isTemporaryPassword: {
+      type: Boolean,
+      default: false,
+    },
+    passwordResetToken: {
+      type: String,
+      default: null,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
     // Legacy field — kept for backward compatibility with existing records.
     // New assignments are stored in ExamAssignment collection.
     assignedExamId: {

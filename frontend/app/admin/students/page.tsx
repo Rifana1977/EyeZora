@@ -30,6 +30,49 @@ export default function StudentsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState("");
 
+  // Bulk import states
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [sendEmails, setSendEmails] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResults, setImportResults] = useState<any>(null);
+
+  function downloadCredentialsCSV(credentials: any[]) {
+    const headers = ["Student ID", "Name", "Email", "Temporary Password"];
+    const rows = credentials.map(c => [c.studentId, c.name, c.email, c.tempPassword]);
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `eyezora_credentials_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function handleImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importFile) {
+      toast.error("Please select a file to import");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await adminApi.bulkImportStudents(importFile, sendEmails);
+      setImportResults(res);
+      toast.success(`Successfully imported ${res.created} students!`);
+      if (res.credentials && res.credentials.length > 0) {
+        downloadCredentialsCSV(res.credentials);
+      }
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to import students");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function load() {
     setLoading(true);
     try {
@@ -103,14 +146,28 @@ export default function StudentsPage() {
               Register student accounts. Use <strong style={{ color: "var(--text-accent)" }}>Assign Exams</strong> to schedule examinations.
             </p>
           </div>
-          <button
-            id="add-student-btn"
-            onClick={() => setAddOpen(true)}
-            className="btn-glow"
-            style={{ padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600 }}
-          >
-            + Register Student
-          </button>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              id="bulk-import-btn"
+              onClick={() => { setImportResults(null); setImportFile(null); setImportOpen(true); }}
+              className="btn-glow"
+              style={{
+                padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600,
+                background: "rgba(124,58,237,0.1)", color: "#a78bfa",
+                border: "1px solid rgba(124,58,237,0.3)", cursor: "pointer"
+              }}
+            >
+              📥 Bulk Import
+            </button>
+            <button
+              id="add-student-btn"
+              onClick={() => setAddOpen(true)}
+              className="btn-glow"
+              style={{ padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600 }}
+            >
+              + Register Student
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -312,6 +369,125 @@ export default function StudentsPage() {
             </p>
           </div>
         </form>
+      </Modal>
+
+      {/* Bulk Import Modal */}
+      <Modal
+        isOpen={importOpen}
+        onClose={() => { setImportOpen(false); setImportFile(null); setImportResults(null); }}
+        title="Bulk Import Students (CSV / Excel)"
+        size="md"
+        footer={
+          <>
+            <button
+              onClick={() => { setImportOpen(false); setImportFile(null); setImportResults(null); }}
+              style={{ padding: "9px 18px", borderRadius: 8, background: "var(--bg-elevated)", border: "1px solid var(--bg-border)", color: "var(--text-secondary)", cursor: "pointer" }}
+            >
+              Close
+            </button>
+            {!importResults && (
+              <button
+                onClick={handleImport}
+                disabled={importing || !importFile}
+                className="btn-glow"
+                style={{ padding: "9px 20px", borderRadius: 8, fontSize: 14 }}
+              >
+                {importing ? "Importing…" : "Upload & Import"}
+              </button>
+            )}
+          </>
+        }
+      >
+        {!importResults ? (
+          <form onSubmit={handleImport}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.6 }}>
+                Upload a CSV or Excel (.xlsx, .xls) file. The file should contain column headers: 
+                <strong style={{ color: "var(--text-accent)" }}> studentId, name, email</strong>.
+              </p>
+              
+              <div style={{
+                padding: "24px 14px", border: "2px dashed var(--bg-border)",
+                borderRadius: 12, textAlign: "center", background: "var(--bg-elevated)",
+                position: "relative", cursor: "pointer"
+              }}>
+                <input
+                  type="file"
+                  accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setImportFile(f);
+                  }}
+                  style={{
+                    position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+                    opacity: 0, cursor: "pointer"
+                  }}
+                />
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+                <div style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 600 }}>
+                  {importFile ? importFile.name : "Click to select CSV or Excel file"}
+                </div>
+                <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
+                  Max size: 10MB
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  id="send-emails-check"
+                  checked={sendEmails}
+                  onChange={(e) => setSendEmails(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: "#7c3aed" }}
+                />
+                <label htmlFor="send-emails-check" style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+                  Email login credentials automatically to imported students
+                </label>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{
+              padding: 16, borderRadius: 10, background: "rgba(16,185,129,0.08)",
+              border: "1px solid rgba(16,185,129,0.2)", display: "flex", alignItems: "center", gap: 12
+            }}>
+              <span style={{ fontSize: 24 }}>✅</span>
+              <div>
+                <h4 style={{ color: "#10b981", fontSize: 14, fontWeight: 700, margin: 0 }}>Import Completed Successfully</h4>
+                <p style={{ color: "var(--text-secondary)", fontSize: 12, margin: "2px 0 0" }}>
+                  Created <strong>{importResults.created}</strong> student accounts. Failed: <strong>{importResults.failed}</strong>.
+                </p>
+              </div>
+            </div>
+            
+            {importResults.credentials && importResults.credentials.length > 0 && (
+              <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>
+                📥 Credentials CSV has been downloaded automatically.
+              </p>
+            )}
+
+            {importResults.errors && importResults.errors.length > 0 && (
+              <div>
+                <h5 style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Import Errors ({importResults.errors.length})</h5>
+                <div style={{
+                  maxHeight: 150, overflowY: "auto", border: "1px solid var(--bg-border)",
+                  borderRadius: 8, padding: 8, background: "var(--bg-base)"
+                }}>
+                  {importResults.errors.map((err: any, idx: number) => (
+                    <div key={idx} style={{
+                      fontSize: 11, color: "var(--text-secondary)", paddingBottom: 6,
+                      borderBottom: idx < importResults.errors.length - 1 ? "1px solid var(--bg-border)" : "none",
+                      marginBottom: 4
+                    }}>
+                      <strong>Row/ID:</strong> {err.studentId || err.row || "Unknown"} — <span style={{ color: "#ef4444" }}>{err.error}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Delete Confirm */}

@@ -29,8 +29,14 @@ export default function StudentLoginPage() {
       document.cookie = `ez_role=student; path=/; max-age=14400`;
 
       toast.success(`Welcome, ${user.name}!`);
-      // Always go to pre-exam page — it handles all assignment states
-      router.push("/student/pre-exam");
+
+      // If this is a temporary/first-time password, force change
+      if (user.isTemporaryPassword) {
+        router.push("/student/change-password");
+      } else {
+        // Always go to pre-exam page — it handles all assignment states
+        router.push("/student/pre-exam");
+      }
     } catch (err: any) {
       toast.error(err.message || "Invalid credentials");
     } finally {
@@ -147,6 +153,15 @@ export default function StudentLoginPage() {
                   {showPw ? "🙈" : "👁"}
                 </button>
               </div>
+            </div>
+            {/* Forgot password link */}
+            <div style={{ textAlign: "right", marginTop: -4, marginBottom: 4 }}>
+              <a
+                href="/student/forgot-password"
+                style={{ color: "var(--text-accent)", fontSize: 12, fontWeight: 600, textDecoration: "none" }}
+              >
+                Forgot Password?
+              </a>
             </div>
 
             <button

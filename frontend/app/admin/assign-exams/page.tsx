@@ -87,6 +87,82 @@ export default function AssignExamsPage() {
 
   const [cancelId, setCancelId] = useState<string | null>(null);
 
+  // Bulk assignment states
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({
+    examId: "",
+    startDate: "",
+    startTime: "",
+    duration: "",
+    notes: "",
+  });
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
+  const [bulkStudentSearch, setBulkStudentSearch] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResults, setBulkResults] = useState<any>(null);
+
+  function openBulkAssign() {
+    setBulkForm({
+      examId: "",
+      startDate: "",
+      startTime: "",
+      duration: "",
+      notes: "",
+    });
+    setBulkSelectedIds([]);
+    setBulkStudentSearch("");
+    setBulkResults(null);
+    setBulkModalOpen(true);
+  }
+
+  function onBulkExamChange(examId: string) {
+    const exam = exams.find(e => e._id === examId);
+    setBulkForm(f => ({
+      ...f,
+      examId,
+      duration: exam ? String(exam.duration) : f.duration,
+    }));
+  }
+
+  async function handleBulkSave(e: React.FormEvent) {
+    e.preventDefault();
+    const { examId, startDate, startTime, duration } = bulkForm;
+
+    if (!examId || !startDate || !startTime || !duration) {
+      toast.error("Exam, Start Date, Start Time, and Duration are required");
+      return;
+    }
+
+    if (bulkSelectedIds.length === 0) {
+      toast.error("Please select at least one student");
+      return;
+    }
+
+    const startDateTime = new Date(`${startDate}T${startTime}:00`);
+    if (isNaN(startDateTime.getTime())) {
+      toast.error("Invalid start date/time");
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const res = await adminApi.bulkAssign({
+        studentObjectIds: bulkSelectedIds,
+        examId,
+        startTime: startDateTime.toISOString(),
+        duration: Number(duration),
+        notes: bulkForm.notes,
+      });
+      setBulkResults(res);
+      toast.success(`Successfully assigned exam to ${res.assigned} students!`);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Bulk assignment failed");
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -239,14 +315,28 @@ export default function AssignExamsPage() {
               Schedule examinations for students with start time, end time, and duration.
             </p>
           </div>
-          <button
-            id="assign-exam-btn"
-            onClick={() => openAssign()}
-            className="btn-glow"
-            style={{ padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600 }}
-          >
-            + Assign Exam
-          </button>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              id="bulk-assign-btn"
+              onClick={() => openBulkAssign()}
+              className="btn-glow"
+              style={{
+                padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600,
+                background: "rgba(124,58,237,0.1)", color: "#a78bfa",
+                border: "1px solid rgba(124,58,237,0.3)", cursor: "pointer"
+              }}
+            >
+              📥 Bulk Assign
+            </button>
+            <button
+              id="assign-exam-btn"
+              onClick={() => openAssign()}
+              className="btn-glow"
+              style={{ padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600 }}
+            >
+              + Assign Exam
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -547,6 +637,202 @@ export default function AssignExamsPage() {
             </div>
           </div>
         </form>
+      </Modal>
+
+      {/* Bulk Assign Modal */}
+      <Modal
+        isOpen={bulkModalOpen}
+        onClose={() => { setBulkModalOpen(false); }}
+        title="Bulk Assign Exam"
+        size="lg"
+        footer={
+          <>
+            <button
+              onClick={() => setBulkModalOpen(false)}
+              style={{ padding: "9px 18px", borderRadius: 8, background: "var(--bg-elevated)", border: "1px solid var(--bg-border)", color: "var(--text-secondary)", cursor: "pointer" }}
+            >
+              {bulkResults ? "Close" : "Cancel"}
+            </button>
+            {!bulkResults && (
+              <button
+                onClick={handleBulkSave}
+                disabled={bulkSaving || bulkSelectedIds.length === 0}
+                className="btn-glow"
+                style={{ padding: "9px 20px", borderRadius: 8, fontSize: 14 }}
+              >
+                {bulkSaving ? "Assigning…" : `Assign to ${bulkSelectedIds.length} Students`}
+              </button>
+            )}
+          </>
+        }
+      >
+        {!bulkResults ? (
+          <form onSubmit={handleBulkSave}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              {/* Left Column — Config */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <h4 style={{ color: "var(--text-accent)", fontSize: 13, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
+                  1. Schedule details
+                </h4>
+                
+                <div>
+                  <label style={labelStyle}>Exam</label>
+                  <select
+                    className="ez-input"
+                    value={bulkForm.examId}
+                    onChange={(e) => onBulkExamChange(e.target.value)}
+                  >
+                    <option value="">— Select Exam —</option>
+                    {exams.map(ex => (
+                      <option key={ex._id} value={ex._id}>{ex.title} ({ex.duration} min)</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Start Date</label>
+                    <input type="date" className="ez-input" value={bulkForm.startDate}
+                      onChange={(e) => setBulkForm({ ...bulkForm, startDate: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Start Time</label>
+                    <input type="time" className="ez-input" value={bulkForm.startTime}
+                      onChange={(e) => setBulkForm({ ...bulkForm, startTime: e.target.value })} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Duration (minutes)</label>
+                  <input
+                    type="number"
+                    className="ez-input"
+                    min={1}
+                    value={bulkForm.duration}
+                    onChange={(e) => setBulkForm({ ...bulkForm, duration: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Notes (optional)</label>
+                  <input
+                    className="ez-input"
+                    placeholder="Instructions…"
+                    value={bulkForm.notes}
+                    onChange={(e) => setBulkForm({ ...bulkForm, notes: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Right Column — Student Selection */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <h4 style={{ color: "var(--text-accent)", fontSize: 13, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
+                  2. Select Students ({bulkSelectedIds.length} selected)
+                </h4>
+                
+                <input
+                  className="ez-input"
+                  placeholder="Filter student list…"
+                  value={bulkStudentSearch}
+                  onChange={(e) => setBulkStudentSearch(e.target.value)}
+                />
+
+                <div style={{
+                  border: "1px solid var(--bg-border)", borderRadius: 10,
+                  maxHeight: 220, overflowY: "auto", background: "var(--bg-elevated)",
+                  padding: 8
+                }}>
+                  {/* Select All Toggle */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+                    borderBottom: "1px solid var(--bg-border)", marginBottom: 8
+                  }}>
+                    <input
+                      type="checkbox"
+                      id="select-all-students"
+                      checked={students.length > 0 && bulkSelectedIds.length === students.filter(s => s.isActive).length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setBulkSelectedIds(students.filter(s => s.isActive).map(s => s._id));
+                        } else {
+                          setBulkSelectedIds([]);
+                        }
+                      }}
+                      style={{ accentColor: "#7c3aed" }}
+                    />
+                    <label htmlFor="select-all-students" style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 12, cursor: "pointer" }}>
+                      Select All Active Students
+                    </label>
+                  </div>
+
+                  {students
+                    .filter(s => s.isActive && (
+                      s.name.toLowerCase().includes(bulkStudentSearch.toLowerCase()) ||
+                      s.studentId.toLowerCase().includes(bulkStudentSearch.toLowerCase())
+                    ))
+                    .map(s => {
+                      const checked = bulkSelectedIds.includes(s._id);
+                      return (
+                        <div key={s._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px" }}>
+                          <input
+                            type="checkbox"
+                            id={`bulk-stu-${s._id}`}
+                            checked={checked}
+                            onChange={() => {
+                              if (checked) {
+                                setBulkSelectedIds(bulkSelectedIds.filter(id => id !== s._id));
+                              } else {
+                                setBulkSelectedIds([...bulkSelectedIds, s._id]);
+                              }
+                            }}
+                            style={{ accentColor: "#7c3aed" }}
+                          />
+                          <label htmlFor={`bulk-stu-${s._id}`} style={{ color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}>
+                            <strong>{s.studentId}</strong> — {s.name}
+                          </label>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{
+              padding: 16, borderRadius: 10, background: "rgba(16,185,129,0.08)",
+              border: "1px solid rgba(16,185,129,0.2)", display: "flex", alignItems: "center", gap: 12
+            }}>
+              <span style={{ fontSize: 24 }}>✅</span>
+              <div>
+                <h4 style={{ color: "#10b981", fontSize: 14, fontWeight: 700, margin: 0 }}>Bulk Assign Finished</h4>
+                <p style={{ color: "var(--text-secondary)", fontSize: 12, margin: "2px 0 0" }}>
+                  Assigned successfully to <strong>{bulkResults.assigned}</strong> students. Failed/Conflicts: <strong>{bulkResults.failed}</strong>.
+                </p>
+              </div>
+            </div>
+
+            {bulkResults.errors && bulkResults.errors.length > 0 && (
+              <div>
+                <h5 style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Scheduling Conflicts & Errors ({bulkResults.errors.length})</h5>
+                <div style={{
+                  maxHeight: 200, overflowY: "auto", border: "1px solid var(--bg-border)",
+                  borderRadius: 8, padding: 8, background: "var(--bg-base)"
+                }}>
+                  {bulkResults.errors.map((err: any, idx: number) => (
+                    <div key={idx} style={{
+                      fontSize: 11, color: "var(--text-secondary)", paddingBottom: 6,
+                      borderBottom: idx < bulkResults.errors.length - 1 ? "1px solid var(--bg-border)" : "none",
+                      marginBottom: 4
+                    }}>
+                      <strong>{err.studentName || err.studentId || "Student"}:</strong> <span style={{ color: "#ef4444" }}>{err.error}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Cancel Confirm */}

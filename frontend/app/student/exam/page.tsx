@@ -48,6 +48,9 @@ export default function StudentExamPage() {
   const [tabSwitches, setTabSwitches] = useState(0);
   const [fsExits, setFsExits] = useState(0);
   const [isFsActive, setIsFsActive] = useState(true);
+  const [aiConnected, setAiConnected] = useState<boolean>(true);
+  const aiFailuresRef = useRef<number>(0);
+  const aiLoggedFailureRef = useRef<boolean>(false);
 
   const examId = user?.assignedExam?.id ?? "";
   const examTitle = user?.assignedExam?.title ?? "Exam";
@@ -301,6 +304,19 @@ export default function StudentExamPage() {
 
   // ── Start Exam Session ─────────────────────────────────────────────────────
   async function startExamSession() {
+    // Check AI microservice availability on startup
+    try {
+      const health = await aiApi.healthCheck();
+      if (!health.available) {
+        toast.warning("AI Proctoring service is offline. Monitoring logs will run in connection-retry mode.");
+        setAiConnected(false);
+      } else if (!health.modelsLoaded) {
+        toast.warning("AI models are currently loading or in stub mode on the server.");
+      }
+    } catch {
+      setAiConnected(false);
+    }
+
     try {
       const qs = await studentApi.getExamQuestions(examId);
       setQuestions(qs);
@@ -376,9 +392,31 @@ export default function StudentExamPage() {
         sessionIdRef.current
       );
 
-      if (result?.events) {
-        for (const ev of result.events) {
-          await logViolation(ev.event, ev.confidence);
+      if (result) {
+        // Recovery check
+        if (aiFailuresRef.current >= 5) {
+          setAiConnected(true);
+          aiFailuresRef.current = 0;
+          if (aiLoggedFailureRef.current) {
+            aiLoggedFailureRef.current = false;
+            await logViolation("MONITORING_RESTORED", 100);
+          }
+        } else {
+          aiFailuresRef.current = 0;
+        }
+
+        if (result.events) {
+          for (const ev of result.events) {
+            await logViolation(ev.event, ev.confidence);
+          }
+        }
+      } else {
+        // AI returned null (network fail, server offline, frame decode timeout)
+        aiFailuresRef.current += 1;
+        if (aiFailuresRef.current >= 5 && !aiLoggedFailureRef.current) {
+          setAiConnected(false);
+          aiLoggedFailureRef.current = true;
+          await logViolation("MONITORING_FAILURE", 100);
         }
       }
     }, 1000);
@@ -457,7 +495,7 @@ export default function StudentExamPage() {
           .catch((err) => console.error("Recording upload failed:", err));
       }
 
-      toast.success(`Exam submitted! Score: ${result.score}/${result.totalMarks}`);
+      toast.success("Exam submitted successfully!");
       setPhase("done");
     } catch (err: any) {
       toast.error("Submission failed: " + err.message);
@@ -623,6 +661,24 @@ export default function StudentExamPage() {
         </div>
       )}
 
+      {/* AI Connection Failure Banner */}
+      {!aiConnected && (
+        <div style={{
+          position: "fixed",
+          top: warningMsg ? 45 : 0, left: 0, right: 0,
+          background: "linear-gradient(90deg,#d97706,#f59e0b)",
+          color: "#fff",
+          textAlign: "center",
+          padding: "10px 0",
+          fontSize: 14,
+          fontWeight: 700,
+          zIndex: 9998,
+          animation: "slideInDown 0.3s ease",
+        }}>
+          ⚠️ AI Monitoring Connection lost. Please ensure your camera is visible. Attempting to reconnect...
+        </div>
+      )}
+
       {/* Top Bar */}
       <div style={{
         display: "flex",
@@ -673,9 +729,18 @@ export default function StudentExamPage() {
             {answered}/{questions.length} answered
           </span>
           {/* AI monitoring active indicator */}
-          <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#10b981", fontSize: 11, fontWeight: 700 }}>
-            <span className="pulse-dot" style={{ fontSize: 8 }}>●</span>
-            AI ACTIVE
+          <span style={{
+            display: "flex", alignItems: "center", gap: 4,
+            color: aiConnected ? "#10b981" : "#ef4444",
+            fontSize: 11, fontWeight: 700
+          }}>
+            <span className={aiConnected ? "pulse-dot" : ""} style={{
+              fontSize: 8,
+              display: "inline-block",
+              width: 8, height: 8, borderRadius: "50%",
+              background: aiConnected ? "#10b981" : "#ef4444"
+            }}>{aiConnected ? "●" : ""}</span>
+            {aiConnected ? "AI ACTIVE" : "AI OFFLINE (RECONNECTING…)"}
           </span>
         </div>
       </div>
