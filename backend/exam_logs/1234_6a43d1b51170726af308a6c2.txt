@@ -1,0 +1,35 @@
+═══════════════════════════════════════════════════════════════
+                    EYEZORA EXAM PROCTORING LOG                
+═══════════════════════════════════════════════════════════════
+Student ID   : 1234
+Student Name : muzrif
+Exam         : Rifa
+Session ID   : 6a43d1b51170726af308a6c2
+Start Time   : 2026-06-30T14:24:53.101Z
+End Time     : 2026-06-30T14:25:59.329Z
+Duration     : 1 min 6 sec
+Risk Level   : Medium
+
+─── VIOLATION SUMMARY ──────────────────────────────────────────
+Multiple Faces      : 0
+No Face Detected    : 0
+Looking Away        : 0
+Phone Detected      : 0
+Suspicious Movement : 0
+Tab Switches        : 0
+Window Focus Lost   : 2
+Full-Screen Exits   : 2
+Extension Warnings  : 0
+TOTAL VIOLATIONS    : 4
+
+─── EVENT LOG ──────────────────────────────────────────────────
+Timestamp                  | Event                     | Conf | Severity
+───────────────────────────|───────────────────────────|──────|─────────
+30/6/2026, 7:54:53 pm      | Exam Started              | 100% | Low
+30/6/2026, 7:54:53 pm      | Fullscreen Exit           | 100% | High
+30/6/2026, 7:54:57 pm      | Window Focus Lost         | 100% | Medium
+30/6/2026, 7:54:59 pm      | Window Focus Restored     | 100% | Medium
+30/6/2026, 7:55:06 pm      | Window Focus Lost         | 100% | Medium
+30/6/2026, 7:55:07 pm      | Window Focus Restored     | 100% | Medium
+30/6/2026, 7:55:24 pm      | Fullscreen Exit           | 100% | High
+═══════════════════════════════════════════════════════════════

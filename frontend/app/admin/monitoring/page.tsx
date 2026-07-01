@@ -31,10 +31,16 @@ export default function MonitoringPage() {
   const [filter, setFilter] = useState<"all" | "Low" | "Medium" | "High">("all");
 
   useEffect(() => {
-    adminApi.getSessions()
-      .then(setSessions)
-      .catch((e: any) => toast.error(e.message))
-      .finally(() => setLoading(false));
+    function fetchSessions() {
+      adminApi.getSessions()
+        .then(setSessions)
+        .catch((e: any) => toast.error(e.message))
+        .finally(() => setLoading(false));
+    }
+
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const filtered = sessions.filter((s) => {

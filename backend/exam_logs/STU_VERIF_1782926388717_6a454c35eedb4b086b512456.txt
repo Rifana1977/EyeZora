@@ -1,0 +1,30 @@
+═══════════════════════════════════════════════════════════════
+                    EYEZORA EXAM PROCTORING LOG                
+═══════════════════════════════════════════════════════════════
+Student ID   : STU_VERIF_1782926388717
+Student Name : Verification Student
+Exam         : Verification Test Exam
+Session ID   : 6a454c35eedb4b086b512456
+Start Time   : 2026-07-01T17:19:49.995Z
+End Time     : 2026-07-01T17:19:50.980Z
+Duration     : 0 min 0 sec
+Risk Level   : Low
+
+─── VIOLATION SUMMARY ──────────────────────────────────────────
+Multiple Faces      : 0
+No Face Detected    : 1
+Looking Away        : 0
+Phone Detected      : 0
+Suspicious Movement : 0
+Tab Switches        : 0
+Window Focus Lost   : 0
+Full-Screen Exits   : 0
+Extension Warnings  : 0
+TOTAL VIOLATIONS    : 1
+
+─── EVENT LOG ──────────────────────────────────────────────────
+Timestamp                  | Event                     | Conf | Severity
+───────────────────────────|───────────────────────────|──────|─────────
+1/7/2026, 10:49:50 pm      | Exam Started              | 100% | Low
+1/7/2026, 10:49:50 pm      | No Face Detected          | 95%  | High
+═══════════════════════════════════════════════════════════════

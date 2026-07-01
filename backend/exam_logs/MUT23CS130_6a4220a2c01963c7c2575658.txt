@@ -1,0 +1,33 @@
+═══════════════════════════════════════════════════════════════
+                    EYEZORA EXAM PROCTORING LOG                
+═══════════════════════════════════════════════════════════════
+Student ID   : MUT23CS130
+Student Name : Rifana K Shejir
+Exam         : muzammil
+Session ID   : 6a4220a2c01963c7c2575658
+Start Time   : 2026-06-29T07:37:06.575Z
+End Time     : 2026-06-29T07:38:56.193Z
+Duration     : 1 min 49 sec
+Risk Level   : Medium
+
+─── VIOLATION SUMMARY ──────────────────────────────────────────
+Multiple Faces      : 0
+No Face Detected    : 0
+Looking Away        : 0
+Phone Detected      : 0
+Suspicious Movement : 0
+Tab Switches        : 0
+Window Blur Events  : 4
+Full-Screen Exits   : 0
+Extension Warnings  : 0
+TOTAL VIOLATIONS    : 4
+
+─── EVENT LOG ──────────────────────────────────────────────────
+Timestamp                  | Event                | Conf | Severity
+───────────────────────────|──────────────────────|──────|─────────
+29/6/2026, 1:07:06 pm      | EXAM_START           | 100% | Low
+29/6/2026, 1:07:42 pm      | WINDOW_BLUR          | 100% | Medium
+29/6/2026, 1:08:14 pm      | WINDOW_BLUR          | 100% | Medium
+29/6/2026, 1:08:34 pm      | WINDOW_BLUR          | 100% | Medium
+29/6/2026, 1:08:44 pm      | WINDOW_BLUR          | 100% | Medium
+═══════════════════════════════════════════════════════════════

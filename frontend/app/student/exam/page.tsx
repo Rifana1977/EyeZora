@@ -206,6 +206,11 @@ export default function StudentExamPage() {
       streamRef.current = existingStream;
       if (videoRef.current) {
         videoRef.current.srcObject = existingStream;
+        videoRef.current.play()
+          .then(() => console.log("Camera initialized"))
+          .catch((err) => console.error("Error playing video:", err));
+      } else {
+        console.log("Camera initialized");
       }
       setupRecorders(existingStream);
       startExamSession();
@@ -284,6 +289,11 @@ export default function StudentExamPage() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play()
+          .then(() => console.log("Camera initialized"))
+          .catch((err) => console.error("Error playing video:", err));
+      } else {
+        console.log("Camera initialized");
       }
       setupRecorders(stream);
 
@@ -375,7 +385,15 @@ export default function StudentExamPage() {
         }
       }
 
-      if (!video || video.readyState < 2) return;
+      if (!video || video.readyState < 2) {
+        // Explicitly play video to handle autoplay restrictions
+        if (video && video.paused) {
+          video.play().catch(() => {});
+        }
+        return;
+      }
+
+      console.log("Frame captured");
 
       const canvas = document.createElement("canvas");
       canvas.width = video.videoWidth || 320;
@@ -385,38 +403,43 @@ export default function StudentExamPage() {
       ctx.drawImage(video, 0, 0);
       const base64 = canvas.toDataURL("image/jpeg", 0.7);
 
-      const result = await aiApi.analyzeFrame(
-        base64,
-        user?.studentId ?? "",
-        examId,
-        sessionIdRef.current
-      );
+      try {
+        console.log("Frame transmitted");
+        const result = await aiApi.analyzeFrame(
+          base64,
+          user?.studentId ?? "",
+          examId,
+          sessionIdRef.current
+        );
+        console.log("Frontend received detection");
 
-      if (result) {
-        // Recovery check
-        if (aiFailuresRef.current >= 5) {
-          setAiConnected(true);
-          aiFailuresRef.current = 0;
-          if (aiLoggedFailureRef.current) {
-            aiLoggedFailureRef.current = false;
-            await logViolation("MONITORING_RESTORED", 100);
+        if (result) {
+          // Recovery check
+          if (aiFailuresRef.current >= 5) {
+            setAiConnected(true);
+            aiFailuresRef.current = 0;
+            if (aiLoggedFailureRef.current) {
+              aiLoggedFailureRef.current = false;
+              await logViolation("MONITORING_RESTORED", 100);
+            }
+          } else {
+            aiFailuresRef.current = 0;
           }
-        } else {
-          aiFailuresRef.current = 0;
-        }
 
-        if (result.events) {
-          for (const ev of result.events) {
-            await logViolation(ev.event, ev.confidence);
+          if (result.events) {
+            for (const ev of result.events) {
+              showWarning(ev.event);
+            }
           }
         }
-      } else {
-        // AI returned null (network fail, server offline, frame decode timeout)
+      } catch (err: any) {
+        const errMsg = err.message || "Unknown error";
+        console.error("Frame analysis failed:", errMsg);
         aiFailuresRef.current += 1;
         if (aiFailuresRef.current >= 5 && !aiLoggedFailureRef.current) {
           setAiConnected(false);
           aiLoggedFailureRef.current = true;
-          await logViolation("MONITORING_FAILURE", 100);
+          await logViolation(`MONITORING_FAILURE: ${errMsg}`, 100);
         }
       }
     }, 1000);

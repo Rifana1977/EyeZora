@@ -269,9 +269,17 @@ export const aiApi = {
     sessionId?: string
   ) => {
     try {
-      const res = await fetch(`${AI_BASE}/analyze-frame`, {
+      const token = getToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_BASE}/api/session/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           image: imageBase64,
           student_id: studentId,
@@ -279,21 +287,37 @@ export const aiApi = {
           session_id: sessionId,
         }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
       return res.json();
-    } catch {
-      return null;
+    } catch (err: any) {
+      throw err;
     }
   },
 
   /** Check if the Python AI service is reachable */
   healthCheck: async (): Promise<{ available: boolean; modelsLoaded: boolean }> => {
     try {
-      const res = await fetch(`${AI_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-      if (!res.ok) return { available: false, modelsLoaded: false };
+      const token = getToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_BASE}/api/session/ai-health`, {
+        headers,
+        signal: AbortSignal.timeout(3000)
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
-      return { available: true, modelsLoaded: data.models_loaded === true };
-    } catch {
+      return { available: true, modelsLoaded: data.modelsLoaded === true };
+    } catch (err: any) {
+      console.error("AI service health check failed:", err.message);
       return { available: false, modelsLoaded: false };
     }
   },

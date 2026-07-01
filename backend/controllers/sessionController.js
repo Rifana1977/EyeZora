@@ -65,6 +65,86 @@ exports.startSession = async (req, res) => {
   }
 };
 
+// Helper to log proctoring event and update session counters/risk level
+const logSessionEvent = async (sessionId, studentId, event, confidence) => {
+  if (!sessionId || !event) {
+    throw new Error("sessionId and event are required");
+  }
+
+  const session = await ExamSession.findById(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  // Determine severity
+  const highSeverityEvents = [
+    "MULTIPLE_FACES", "NO_FACE", "PHONE_DETECTED",
+    "TAB_SWITCH", "FULLSCREEN_EXIT", "CAMERA_DISCONNECTED",
+    "MICROPHONE_DISABLED",
+  ];
+  const mediumSeverityEvents = [
+    "LOOKING_AWAY", "WINDOW_BLUR", "WINDOW_FOCUS_LOST",
+    "WINDOW_FOCUS_RESTORED", "EXTENSION_WARNING", "MONITORING_FAILURE",
+  ];
+  const severity = highSeverityEvents.includes(event)
+    ? "High"
+    : mediumSeverityEvents.includes(event)
+      ? "Medium"
+      : "Low";
+
+  // Create log entry
+  await ProctoringLog.create({
+    sessionId,
+    studentId,
+    examId: session.examId,
+    event,
+    confidence: confidence || 100,
+    severity,
+  });
+
+  // Update session counters — WINDOW_FOCUS_RESTORED, MONITORING_FAILURE, etc. are informational
+  const nonViolationEvents = [
+    "WINDOW_FOCUS_RESTORED", "EXAM_START", "EXAM_END", "CAMERA_GRANTED",
+    "MONITORING_FAILURE", "MONITORING_RESTORED"
+  ];
+  
+  const isNonViolation = nonViolationEvents.includes(event) || event.startsWith("MONITORING_FAILURE") || event.startsWith("MONITORING_RESTORED");
+
+  const counterMap = {
+    MULTIPLE_FACES: "multipleFacesCount",
+    NO_FACE: "noFaceCount",
+    LOOKING_AWAY: "lookingAwayCount",
+    PHONE_DETECTED: "phoneDetectedCount",
+    SUSPICIOUS_MOVEMENT: "suspiciousMovementCount",
+    TAB_SWITCH: "tabSwitchCount",
+    WINDOW_BLUR: "windowBlurCount",
+    WINDOW_FOCUS_LOST: "windowFocusLostCount",
+    FULLSCREEN_EXIT: "fullscreenExitCount",
+    EXTENSION_WARNING: "extensionWarningCount",
+  };
+
+  const counterField = counterMap[event];
+  const isViolation = !isNonViolation;
+  const updateQuery = isViolation ? { $inc: { totalViolations: 1 } } : { $inc: {} };
+
+  if (counterField) {
+    updateQuery.$inc[counterField] = 1;
+  }
+
+  const updatedSession = await ExamSession.findByIdAndUpdate(
+    sessionId,
+    updateQuery,
+    { new: true }
+  );
+
+  // Recompute risk level
+  const violations = updatedSession.totalViolations;
+  const riskLevel =
+    violations <= 2 ? "Low" : violations <= 5 ? "Medium" : "High";
+
+  await ExamSession.findByIdAndUpdate(sessionId, { riskLevel });
+
+  return { logged: true, severity, riskLevel };
+};
+
 // ─── Log Proctoring Event ──────────────────────────────────────────────────────
 
 /**
@@ -76,84 +156,92 @@ exports.logEvent = async (req, res) => {
     const { sessionId, event, confidence } = req.body;
     const { studentId } = req.user;
 
-    if (!sessionId || !event) {
-      return res.status(400).json({ error: "sessionId and event are required" });
-    }
-
-    const session = await ExamSession.findById(sessionId);
-    if (!session) return res.status(404).json({ error: "Session not found" });
-
-    // Determine severity
-    const highSeverityEvents = [
-      "MULTIPLE_FACES", "NO_FACE", "PHONE_DETECTED",
-      "TAB_SWITCH", "FULLSCREEN_EXIT", "CAMERA_DISCONNECTED",
-      "MICROPHONE_DISABLED",
-    ];
-    const mediumSeverityEvents = [
-      "LOOKING_AWAY", "WINDOW_BLUR", "WINDOW_FOCUS_LOST",
-      "WINDOW_FOCUS_RESTORED", "EXTENSION_WARNING", "MONITORING_FAILURE",
-    ];
-    const severity = highSeverityEvents.includes(event)
-      ? "High"
-      : mediumSeverityEvents.includes(event)
-        ? "Medium"
-        : "Low";
-
-    // Create log entry
-    await ProctoringLog.create({
-      sessionId,
-      studentId,
-      examId: session.examId,
-      event,
-      confidence: confidence || 100,
-      severity,
-    });
-
-    // Update session counters — WINDOW_FOCUS_RESTORED, MONITORING_FAILURE, etc. are informational
-    const nonViolationEvents = [
-      "WINDOW_FOCUS_RESTORED", "EXAM_START", "EXAM_END", "CAMERA_GRANTED",
-      "MONITORING_FAILURE", "MONITORING_RESTORED"
-    ];
-    const counterMap = {
-      MULTIPLE_FACES: "multipleFacesCount",
-      NO_FACE: "noFaceCount",
-      LOOKING_AWAY: "lookingAwayCount",
-      PHONE_DETECTED: "phoneDetectedCount",
-      SUSPICIOUS_MOVEMENT: "suspiciousMovementCount",
-      TAB_SWITCH: "tabSwitchCount",
-      WINDOW_BLUR: "windowBlurCount",
-      WINDOW_FOCUS_LOST: "windowFocusLostCount",
-      FULLSCREEN_EXIT: "fullscreenExitCount",
-      EXTENSION_WARNING: "extensionWarningCount",
-    };
-
-    const counterField = counterMap[event];
-    const isViolation = !nonViolationEvents.includes(event);
-    const updateQuery = isViolation ? { $inc: { totalViolations: 1 } } : { $inc: {} };
-
-    if (counterField) {
-      updateQuery.$inc[counterField] = 1;
-    }
-
-    const updatedSession = await ExamSession.findByIdAndUpdate(
-      sessionId,
-      updateQuery,
-      { new: true }
-    );
-
-    // Recompute risk level
-    const violations = updatedSession.totalViolations;
-    const riskLevel =
-      violations <= 2 ? "Low" : violations <= 5 ? "Medium" : "High";
-
-    await ExamSession.findByIdAndUpdate(sessionId, { riskLevel });
-
-    res.json({ logged: true, severity, riskLevel });
+    const result = await logSessionEvent(sessionId, studentId, event, confidence);
+    res.json(result);
   } catch (err) {
     console.error("logEvent error:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
+// ─── Check AI Service Health ──────────────────────────────────────────────────
+exports.checkAiHealth = async (req, res) => {
+  try {
+    console.log("[AI Health Check] Checking Python AI service health...");
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
+    
+    const response = await fetch(`${aiServiceUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) {
+      console.error(`[AI Health Check] AI Service returned non-OK status: ${response.status}`);
+      return res.status(502).json({ available: false, modelsLoaded: false, error: `HTTP ${response.status}` });
+    }
+    
+    const data = await response.json();
+    const isLoaded = data.models_loaded === true;
+    console.log(`[AI Health Check] Python AI service is running. Models loaded: ${isLoaded}`);
+    return res.json({ available: true, modelsLoaded: isLoaded });
+  } catch (err) {
+    console.error("[AI Health Check] Python AI service is unreachable:", err.message);
+    return res.status(502).json({ available: false, modelsLoaded: false, error: err.message });
+  }
+};
+
+// ─── Analyze Frame ────────────────────────────────────────────────────────────
+exports.analyzeFrame = async (req, res) => {
+  try {
+    const { image, student_id, exam_id, session_id } = req.body;
+    const studentId = student_id || req.user.studentId;
+    const sessionId = session_id;
+
+    console.log(`[AI Frame Analysis] Backend received frame for student ${studentId}, session ${sessionId || 'none'}`);
+
+    if (!image) {
+      console.warn("[AI Frame Analysis] Skipping: No image payload provided");
+      return res.status(400).json({ error: "image is required" });
+    }
+
+    console.log("[AI Frame Analysis] AI processing frame...");
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
+
+    const response = await fetch(`${aiServiceUrl}/analyze-frame`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image,
+        student_id: studentId,
+        exam_id,
+        session_id: sessionId,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[AI Frame Analysis] Python AI service returned non-OK status: ${response.status}`);
+      return res.status(502).json({ error: `AI service error: HTTP ${response.status}` });
+    }
+
+    const data = await response.json();
+    console.log(`[AI Frame Analysis] Detection complete: found ${data.person_count} persons, ${data.events?.length || 0} events`);
+
+    // Log detected violations in the database automatically if sessionId is present
+    if (sessionId && data.events && data.events.length > 0) {
+      for (const ev of data.events) {
+        try {
+          console.log(`[AI Frame Analysis] Logging event "${ev.event}" to DB...`);
+          await logSessionEvent(sessionId, studentId, ev.event, ev.confidence);
+        } catch (logErr) {
+          console.error(`[AI Frame Analysis] Failed to log event "${ev.event}" to DB:`, logErr.message);
+        }
+      }
+    }
+
+    console.log("[AI Frame Analysis] Result returned to frontend");
+    return res.json(data);
+  } catch (err) {
+    console.error("[AI Frame Analysis] AI service connection failed:", err.message);
+    return res.status(502).json({ error: `AI service connection failed: ${err.message}` });
+  }
+};
+
 
 // ─── End Exam Session ──────────────────────────────────────────────────────────
 

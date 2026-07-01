@@ -8,6 +8,8 @@ const {
   logEvent,
   endSession,
   uploadRecording,
+  checkAiHealth,
+  analyzeFrame,
 } = require("../controllers/sessionController");
 
 // Temp storage for media uploads (before Cloudinary)
@@ -30,6 +32,8 @@ router.use(verifyToken, requireStudent);
 router.post("/start", startSession);
 router.post("/log", logEvent);
 router.post("/end", endSession);
+router.get("/ai-health", checkAiHealth);
+router.post("/analyze", analyzeFrame);
 
 // Accept both video and audio fields in a single request
 router.post(

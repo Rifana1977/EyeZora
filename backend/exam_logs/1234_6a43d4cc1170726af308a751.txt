@@ -1,0 +1,31 @@
+═══════════════════════════════════════════════════════════════
+                    EYEZORA EXAM PROCTORING LOG                
+═══════════════════════════════════════════════════════════════
+Student ID   : 1234
+Student Name : muzrif
+Exam         : rifana
+Session ID   : 6a43d4cc1170726af308a751
+Start Time   : 2026-06-30T14:38:04.021Z
+End Time     : 2026-06-30T14:38:41.469Z
+Duration     : 0 min 37 sec
+Risk Level   : Low
+
+─── VIOLATION SUMMARY ──────────────────────────────────────────
+Multiple Faces      : 0
+No Face Detected    : 0
+Looking Away        : 0
+Phone Detected      : 0
+Suspicious Movement : 0
+Tab Switches        : 0
+Window Focus Lost   : 0
+Full-Screen Exits   : 2
+Extension Warnings  : 0
+TOTAL VIOLATIONS    : 2
+
+─── EVENT LOG ──────────────────────────────────────────────────
+Timestamp                  | Event                     | Conf | Severity
+───────────────────────────|───────────────────────────|──────|─────────
+30/6/2026, 8:08:04 pm      | Exam Started              | 100% | Low
+30/6/2026, 8:08:04 pm      | Fullscreen Exit           | 100% | High
+30/6/2026, 8:08:31 pm      | Fullscreen Exit           | 100% | High
+═══════════════════════════════════════════════════════════════

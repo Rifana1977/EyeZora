@@ -9,3 +9,6 @@ best_train.pt
 best_object_2.pt
 best_object.pt
 node_modules/
+test.js
+dns-test.js
+exam_logs/*

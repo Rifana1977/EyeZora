@@ -123,6 +123,7 @@ async def analyze_frame(req: AnalyzeRequest):
     Analyze a single webcam frame for proctoring violations.
     Returns a list of detected events with confidence scores.
     """
+    print("AI processing frame")
     global gaze_buffer
 
     events: List[DetectionEvent] = []
@@ -250,6 +251,9 @@ async def analyze_frame(req: AnalyzeRequest):
 
     except Exception as e:
         print(f"Object detection error: {e}")
+
+    print("Detection complete")
+    print("Result returned")
 
     return AnalyzeResponse(
         events=events,
