@@ -11,4 +11,5 @@ best_object.pt
 node_modules/
 test.js
 dns-test.js
-exam_logs/*
+exam_logs/
+temp_uploads/
