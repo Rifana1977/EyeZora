@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
-const path = require("path");
 const { verifyToken, requireStudent } = require("../middleware/auth");
 const {
   startSession,
@@ -12,14 +11,8 @@ const {
   analyzeFrame,
 } = require("../controllers/sessionController");
 
-// Temp storage for media uploads (before Cloudinary)
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "../temp_uploads/"),
-  filename: (req, file, cb) => {
-    const ext = file.fieldname === "audio" ? ".webm" : ".webm";
-    cb(null, `${Date.now()}_${file.fieldname}${ext}`);
-  },
-});
+// In-memory storage for media uploads (piped directly to Cloudinary)
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,

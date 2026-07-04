@@ -168,7 +168,7 @@ exports.logEvent = async (req, res) => {
 exports.checkAiHealth = async (req, res) => {
   try {
     console.log("[AI Health Check] Checking Python AI service health...");
-    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
     
     const response = await fetch(`${aiServiceUrl}/health`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) {
@@ -181,8 +181,19 @@ exports.checkAiHealth = async (req, res) => {
     console.log(`[AI Health Check] Python AI service is running. Models loaded: ${isLoaded}`);
     return res.json({ available: true, modelsLoaded: isLoaded });
   } catch (err) {
-    console.error("[AI Health Check] Python AI service is unreachable:", err.message);
-    return res.status(502).json({ available: false, modelsLoaded: false, error: err.message });
+    console.error("========== AI HEALTH ERROR ==========");
+  console.error(err);
+
+  if (err.cause) {
+    console.error("CAUSE:");
+    console.error(err.cause);
+  }
+
+  return res.status(502).json({
+    available: false,
+    modelsLoaded: false,
+    error: err.message,
+  });
   }
 };
 
@@ -201,7 +212,7 @@ exports.analyzeFrame = async (req, res) => {
     }
 
     console.log("[AI Frame Analysis] AI processing frame...");
-    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
+    const aiServiceUrl = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 
     const response = await fetch(`${aiServiceUrl}/analyze-frame`, {
       method: "POST",
@@ -237,8 +248,17 @@ exports.analyzeFrame = async (req, res) => {
     console.log("[AI Frame Analysis] Result returned to frontend");
     return res.json(data);
   } catch (err) {
-    console.error("[AI Frame Analysis] AI service connection failed:", err.message);
-    return res.status(502).json({ error: `AI service connection failed: ${err.message}` });
+    console.error("========== AI FRAME ERROR ==========");
+  console.error(err);
+
+  if (err.cause) {
+    console.error("CAUSE:");
+    console.error(err.cause);
+  }
+
+  return res.status(502).json({
+    error: `AI service connection failed: ${err.message}`,
+  });
   }
 };
 
@@ -333,6 +353,45 @@ exports.endSession = async (req, res) => {
 // ─── Upload Video Recording to Cloudinary ─────────────────────────────────────
 
 /**
+ * Helper: Uploads a buffer directly to Cloudinary using upload_chunked_stream.
+ * Uses stream piping and proper error handling to prevent uncaught exceptions.
+ */
+const uploadFromBuffer = (buffer, options) => {
+  return new Promise((resolve, reject) => {
+    let completed = false;
+
+    const writeStream = cloudinary.uploader.upload_chunked_stream(options, (error, result) => {
+      if (completed) return;
+      completed = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    });
+
+    writeStream.on("error", (err) => {
+      if (completed) return;
+      completed = true;
+      reject(err);
+    });
+
+    const { Readable } = require("stream");
+    const readStream = new Readable();
+    
+    readStream.on("error", (err) => {
+      if (completed) return;
+      completed = true;
+      reject(err);
+    });
+
+    readStream.push(buffer);
+    readStream.push(null);
+    readStream.pipe(writeStream);
+  });
+};
+
+/**
  * POST /api/session/recording
  * Receives a video blob, uploads to Cloudinary, stores URL in session
  */
@@ -353,35 +412,29 @@ exports.uploadRecording = async (req, res) => {
     const updates = {};
 
     // ── Upload Video ───────────────────────────────────────────────────
-    if (videoFile) {
-      try {
-        const result = await cloudinary.uploader.upload(videoFile.path, {
-          resource_type: "video",
-          folder: "eyezora_recordings",
-          public_id: `${session.studentId}_${session._id}_video`,
-          overwrite: true,
-        });
-        updates.recordingUrl = result.secure_url;
-        updates.recordingPublicId = result.public_id;
-      } finally {
-        if (fs.existsSync(videoFile.path)) fs.unlinkSync(videoFile.path);
-      }
+    if (videoFile && videoFile.buffer && videoFile.buffer.length > 0) {
+      const result = await uploadFromBuffer(videoFile.buffer, {
+        resource_type: "video",
+        folder: "eyezora_recordings",
+        public_id: `${session.studentId}_${session._id}_video`,
+        overwrite: true,
+        chunk_size: 6000000,
+      });
+      updates.recordingUrl = result.secure_url;
+      updates.recordingPublicId = result.public_id;
     }
 
     // ── Upload Audio ───────────────────────────────────────────────────
-    if (audioFile) {
-      try {
-        const result = await cloudinary.uploader.upload(audioFile.path, {
-          resource_type: "video", // Cloudinary uses "video" resource_type for audio
-          folder: "eyezora_recordings",
-          public_id: `${session.studentId}_${session._id}_audio`,
-          overwrite: true,
-        });
-        updates.audioRecordingUrl = result.secure_url;
-        updates.audioRecordingPublicId = result.public_id;
-      } finally {
-        if (fs.existsSync(audioFile.path)) fs.unlinkSync(audioFile.path);
-      }
+    if (audioFile && audioFile.buffer && audioFile.buffer.length > 0) {
+      const result = await uploadFromBuffer(audioFile.buffer, {
+        resource_type: "video", // Cloudinary uses "video" resource_type for audio
+        folder: "eyezora_recordings",
+        public_id: `${session.studentId}_${session._id}_audio`,
+        overwrite: true,
+        chunk_size: 6000000,
+      });
+      updates.audioRecordingUrl = result.secure_url;
+      updates.audioRecordingPublicId = result.public_id;
     }
 
     await ExamSession.findByIdAndUpdate(sessionId, updates);
@@ -392,13 +445,6 @@ exports.uploadRecording = async (req, res) => {
     });
   } catch (err) {
     console.error("uploadRecording error:", err);
-    // Clean up any leftover temp files
-    const files = req.files || {};
-    for (const fileList of Object.values(files)) {
-      for (const f of fileList) {
-        if (f?.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
-      }
-    }
     res.status(500).json({ error: err.message });
   }
 };

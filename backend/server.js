@@ -40,6 +40,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`✅ EyeZora backend running on port ${PORT}`);
 });
+
+// Set server timeout to 10 minutes to accommodate large media uploads
+server.timeout = 10 * 60 * 1000;

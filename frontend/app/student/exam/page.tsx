@@ -511,11 +511,15 @@ export default function StudentExamPage() {
         stopAudioPromise,
       ]);
 
-      // Upload recordings in background (non-blocking)
+      // Upload recordings and await the result to ensure it is not aborted
       if (videoBlob || audioBlob) {
-        sessionApi.uploadRecording(sessionIdRef.current, videoBlob, audioBlob)
-          .then(() => console.log("Recordings uploaded successfully"))
-          .catch((err) => console.error("Recording upload failed:", err));
+        try {
+          await sessionApi.uploadRecording(sessionIdRef.current, videoBlob, audioBlob);
+          console.log("Recordings uploaded successfully");
+        } catch (err: any) {
+          console.error("Recording upload failed:", err);
+          toast.warning("Exam answers saved, but media recording upload failed.");
+        }
       }
 
       toast.success("Exam submitted successfully!");
