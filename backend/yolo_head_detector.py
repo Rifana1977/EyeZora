@@ -7,7 +7,7 @@ import numpy as np
 # -------------------------
 # Load face detection model
 # -------------------------
-face_model = YOLO("yolov8s.pt")
+face_model = YOLO("best_train.pt")
 
 # -------------------------
 # Load object detection model
@@ -59,7 +59,7 @@ while True:
         break
 
     warnings = []
-    persons = 0
+    face_count = 0
 
     # --------------------------------
     # FACE DETECTION MODEL PREDICTION
@@ -72,12 +72,12 @@ while True:
             conf = float(box.conf[0])
             label = face_model.names[cls].lower()
 
-            # PERSON detection logic (your original code)
-            if label == "person":
+            # FACE detection logic
+            if label == "face":
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                 area = (x2 - x1) * (y2 - y1)
                 if area > 5000:
-                    persons += 1
+                    face_count += 1
 
                 face_region = frame[y1:y2, x1:x2]
                 gray_face = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
@@ -144,22 +144,22 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)'''
 
     # --------------------------------
-    # PERSON COUNT RULES
+    # FACE COUNT RULES
     # --------------------------------
-    if persons == 0:
-        msg = "No person detected!"
+    if face_count == 0:
+        msg = "No face detected!"
         warnings.append(msg)
         log_event(msg, "WARNING")
         play_warning_sound()
 
-    elif persons > 1:
-        msg = "More than one person detected!"
+    elif face_count > 1:
+        msg = "More than one face detected!"
         warnings.append(msg)
         log_event(msg, "WARNING")
         play_warning_sound()
 
     else:
-        log_event("Exactly one person detected.", "INFO")
+        log_event("Exactly one face detected.", "INFO")
 
     # Display warnings
     y_offset = 50

@@ -4,14 +4,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getUser, clearAuth, type AssignedExam } from "@/lib/auth";
 import { studentApi } from "@/lib/api";
-import { toast } from "@/app/components/ui/Toast";
 
 type PreExamState = "loading" | "no-assignment" | "expired" | "upcoming" | "active";
 
 interface PermissionState {
   camera: "pending" | "granted" | "denied";
   microphone: "pending" | "granted" | "denied";
-  fullscreen: "pending" | "granted" | "denied";
 }
 
 export default function PreExamPage() {
@@ -29,47 +27,11 @@ export default function PreExamPage() {
   const [permState, setPermState] = useState<PermissionState>({
     camera: "pending",
     microphone: "pending",
-    fullscreen: "pending",
   });
   const [permError, setPermError] = useState<string | null>(null);
 
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
-  // Determine which state to show
-  useEffect(() => {
-    if (!user) {
-      router.replace("/student/login");
-      return;
-    }
-
-    if (!assignment) {
-      setState("no-assignment");
-      return;
-    }
-
-    const now = new Date();
-    const start = new Date(assignment.startTime);
-    const end = new Date(assignment.endTime);
-
-    if (now > end) {
-      setState("expired");
-      return;
-    }
-
-    if (now < start) {
-      setState("upcoming");
-      startCountdown(start);
-      return;
-    }
-
-    // Active window — load question count
-    setState("active");
-    setStartDisabled(false);
-    studentApi.getExamQuestions(assignment.id)
-      .then((qs) => setQuestionCount(qs.length))
-      .catch(() => setQuestionCount(null));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startCountdown(targetDate: Date) {
     function tick() {
@@ -91,6 +53,45 @@ export default function PreExamPage() {
     tick();
     countdownRef.current = setInterval(tick, 1000);
   }
+
+  // Determine which state to show
+  useEffect(() => {
+    if (!user) {
+      router.replace("/student/login");
+      return;
+    }
+
+    if (!assignment) {
+      setTimeout(() => setState("no-assignment"), 0);
+      return;
+    }
+
+    const now = new Date();
+    const start = new Date(assignment.startTime);
+    const end = new Date(assignment.endTime);
+
+    if (now > end) {
+      setTimeout(() => setState("expired"), 0);
+      return;
+    }
+
+    if (now < start) {
+      setTimeout(() => {
+        setState("upcoming");
+        startCountdown(start);
+      }, 0);
+      return;
+    }
+
+    // Active window — load question count
+    setTimeout(() => {
+      setState("active");
+      setStartDisabled(false);
+    }, 0);
+    studentApi.getExamQuestions(assignment.id)
+      .then((qs) => setQuestionCount(qs.length))
+      .catch(() => setQuestionCount(null));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
@@ -134,50 +135,11 @@ export default function PreExamPage() {
       return;
     }
 
-    // ── Step 3: Fullscreen ──────────────────────────────────────────────
-    try {
-      const enterFullscreenPromise = new Promise<void>((resolve, reject) => {
-        const onFsChange = () => {
-          if (document.fullscreenElement) {
-            document.removeEventListener("fullscreenchange", onFsChange);
-            resolve();
-          }
-        };
-        document.addEventListener("fullscreenchange", onFsChange);
-        
-        document.documentElement.requestFullscreen()
-          .catch((err) => {
-            document.removeEventListener("fullscreenchange", onFsChange);
-            reject(err);
-          });
-
-        // Safety timeout of 3 seconds
-        setTimeout(() => {
-          document.removeEventListener("fullscreenchange", onFsChange);
-          if (document.fullscreenElement) {
-            resolve();
-          } else {
-            reject(new Error("Fullscreen request timed out"));
-          }
-        }, 3000);
-      });
-
-      await enterFullscreenPromise;
-      setPermState(p => ({ ...p, fullscreen: "granted" }));
-    } catch {
-      setPermState(p => ({ ...p, fullscreen: "denied" }));
-      setPermError("Fullscreen mode is required for this examination. Please allow fullscreen and try again.");
-      stream.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-      setRequestingPerms(false);
-      return;
-    }
-
-    // ── Step 4: All permissions granted — save stream and navigate ──────
+    // ── Step 3: Save stream and navigate ─────────────────────────────────
     // Pass stream via sessionStorage signal; actual stream object is held in ref
     // We store it globally so exam page can pick it up
     if (typeof window !== "undefined") {
-      (window as any).__eyezoraStream = streamRef.current;
+      (window as Window & { __eyezoraStream?: MediaStream | null }).__eyezoraStream = streamRef.current;
       sessionStorage.setItem("ez_exam_ready", "true");
     }
 
@@ -422,7 +384,6 @@ export default function PreExamPage() {
             {[
               { icon: "📷", label: "Camera", key: "camera" as const },
               { icon: "🎙️", label: "Microphone", key: "microphone" as const },
-              { icon: "⛶", label: "Fullscreen", key: "fullscreen" as const },
             ].map(p => {
               const ps = permState[p.key];
               return (

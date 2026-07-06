@@ -30,7 +30,7 @@ def load_models():
     global face_model, object_model, eye_cascade
     try:
         from ultralytics import YOLO
-        face_model = YOLO("yolov8s.pt")
+        face_model = YOLO("best_train.pt")
         object_model = YOLO("yolov8s.pt")
         eye_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_eye.xml"
@@ -74,7 +74,7 @@ class DetectionEvent(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     events: List[DetectionEvent]
-    person_count: int
+    face_count: int
     timestamp: str
 
 class LogRequest(BaseModel):
@@ -127,7 +127,7 @@ async def analyze_frame(req: AnalyzeRequest):
     global gaze_buffer
 
     events: List[DetectionEvent] = []
-    person_count = 0
+    face_count = 0
     timestamp = datetime.datetime.now().isoformat()
 
     # ── Decode base64 image ──────────────────────────────────────────────────
@@ -142,21 +142,21 @@ async def analyze_frame(req: AnalyzeRequest):
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if frame is None:
-            return AnalyzeResponse(events=[], person_count=0, timestamp=timestamp)
+            return AnalyzeResponse(events=[], face_count=0, timestamp=timestamp)
 
     except Exception as e:
         print(f"Frame decode error: {e}")
-        return AnalyzeResponse(events=[], person_count=0, timestamp=timestamp)
+        return AnalyzeResponse(events=[], face_count=0, timestamp=timestamp)
 
     # ── Stub mode if models not loaded ──────────────────────────────────────
     if face_model is None:
         return AnalyzeResponse(
             events=[],
-            person_count=1,
+            face_count=1,
             timestamp=timestamp,
         )
 
-    # ── Face / Person Detection ──────────────────────────────────────────────
+    # ── Face Detection ────────────────────────────────────────────────────────
     try:
         face_results = face_model(frame, conf=0.5, verbose=False)
 
@@ -166,11 +166,11 @@ async def analyze_frame(req: AnalyzeRequest):
                 conf = float(box.conf[0])
                 label = face_model.names[cls].lower()
 
-                if label == "person":
+                if label == "face":
                     x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                     area = (x2 - x1) * (y2 - y1)
                     if area > 5000:
-                        person_count += 1
+                        face_count += 1
 
                     # ── Gaze detection ───────────────────────────────────
                     if eye_cascade is not None:
@@ -204,14 +204,14 @@ async def analyze_frame(req: AnalyzeRequest):
                                         severity="Medium",
                                     ))
 
-        # ── Person count violations ──────────────────────────────────────────
-        if person_count == 0:
+        # ── Face count violations ─────────────────────────────────────────────
+        if face_count == 0:
             events.append(DetectionEvent(
                 event="NO_FACE",
                 confidence=95.0,
                 severity="High",
             ))
-        elif person_count > 1:
+        elif face_count > 1:
             events.append(DetectionEvent(
                 event="MULTIPLE_FACES",
                 confidence=98.0,
@@ -257,7 +257,7 @@ async def analyze_frame(req: AnalyzeRequest):
 
     return AnalyzeResponse(
         events=events,
-        person_count=person_count,
+        face_count=face_count,
         timestamp=timestamp,
     )
 

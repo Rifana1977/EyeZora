@@ -14,7 +14,7 @@ interface Question {
   marks: number;
 }
 
-type ExamPhase = "loading" | "exam" | "submitting" | "done";
+type ExamPhase = "loading" | "setup" | "exam" | "submitting" | "done";
 
 const OPTION_LABELS = ["A", "B", "C", "D", "E"];
 
@@ -35,10 +35,11 @@ export default function StudentExamPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const aiIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
-  const focusLostRef = useRef<boolean>(false); // Track focus state to avoid duplicate RESTORED logs
+  const focusLostRef = useRef<boolean>(false);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<ExamPhase>("loading");
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [currentQ, setCurrentQ] = useState(0);
@@ -51,6 +52,11 @@ export default function StudentExamPage() {
   const [aiConnected, setAiConnected] = useState<boolean>(true);
   const aiFailuresRef = useRef<number>(0);
   const aiLoggedFailureRef = useRef<boolean>(false);
+
+  // ── NEW: Video readiness gate ──────────────────────────────────────────────
+  // This is the single source of truth that guarantees the AI loop and timer
+  // only start after the video element has loaded metadata and can render frames.
+  const [videoReady, setVideoReady] = useState(false);
 
   const examId = user?.assignedExam?.id ?? "";
   const examTitle = user?.assignedExam?.title ?? "Exam";
@@ -82,17 +88,6 @@ export default function StudentExamPage() {
     }
   }, []);
 
-  // ── Log violation ──────────────────────────────────────────────────────────
-  const logViolation = useCallback(async (event: string, confidence = 100) => {
-    if (!sessionIdRef.current) return;
-    try {
-      await sessionApi.logEvent(sessionIdRef.current, event, confidence);
-    } catch { /* silent fail — non-blocking */ }
-
-    setViolations((v) => [...v.slice(-10), event]);
-    showWarning(event);
-  }, []);
-
   function showWarning(event: string) {
     const msgs: Record<string, string> = {
       MULTIPLE_FACES: "🚨 Multiple faces detected!",
@@ -110,14 +105,15 @@ export default function StudentExamPage() {
     }
   }
 
-  // ── Fullscreen Management ──────────────────────────────────────────────────
-  const enterFullscreen = useCallback(() => {
-    const el = document.documentElement;
-    if (el.requestFullscreen) {
-      el.requestFullscreen({ navigationUI: "hide" })
-        .then(() => setIsFsActive(true))
-        .catch(() => setIsFsActive(false));
-    }
+  // ── Log violation ──────────────────────────────────────────────────────────
+  const logViolation = useCallback(async (event: string, confidence = 100) => {
+    if (!sessionIdRef.current) return;
+    try {
+      await sessionApi.logEvent(sessionIdRef.current, event, confidence);
+    } catch { /* silent fail — non-blocking */ }
+
+    setViolations((v) => [...v.slice(-10), event]);
+    showWarning(event);
   }, []);
 
   const restoreFullscreen = useCallback(async () => {
@@ -129,6 +125,7 @@ export default function StudentExamPage() {
     }
   }, []);
 
+  // ── Fullscreen monitoring ──────────────────────────────────────────────────
   useEffect(() => {
     const onFsChange = () => {
       const active = !!document.fullscreenElement;
@@ -154,7 +151,6 @@ export default function StudentExamPage() {
     };
 
     const onBlur = () => {
-      // Only log if not already in a focus-lost state
       if (!focusLostRef.current && !document.hidden) {
         focusLostRef.current = true;
         logViolation("WINDOW_FOCUS_LOST", 100);
@@ -189,35 +185,36 @@ export default function StudentExamPage() {
 
   // ── Initialize from pre-exam permissions ──────────────────────────────────
   useEffect(() => {
-    setIsFsActive(!!document.fullscreenElement);
+    setTimeout(() => setIsFsActive(!!document.fullscreenElement), 0);
     if (!user || !examId) {
       toast.error("No exam assigned. Please login again.");
       router.push("/student/login");
       return;
     }
 
-    // Check if coming from pre-exam page with permissions already granted
+    // Pick up pre-granted stream from pre-exam page (stored on window)
     const examReady = typeof window !== "undefined" && sessionStorage.getItem("ez_exam_ready") === "true";
-    const existingStream = typeof window !== "undefined" ? (window as any).__eyezoraStream as MediaStream | undefined : undefined;
+    const existingStream = typeof window !== "undefined"
+      ? (window as Window & { __eyezoraStream?: MediaStream }).__eyezoraStream
+      : undefined;
 
     if (examReady && existingStream) {
       sessionStorage.removeItem("ez_exam_ready");
-      delete (window as any).__eyezoraStream;
+      delete (window as Window & { __eyezoraStream?: MediaStream }).__eyezoraStream;
       streamRef.current = existingStream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = existingStream;
-        videoRef.current.play()
-          .then(() => console.log("Camera initialized"))
-          .catch((err) => console.error("Error playing video:", err));
-      } else {
-        console.log("Camera initialized");
-      }
-      setupRecorders(existingStream);
-      startExamSession();
-    } else {
-      // Fallback: start permissions from scratch
-      initExam();
     }
+
+    // Fetch questions and enter setup phase
+    studentApi.getExamQuestions(examId)
+      .then((qs) => {
+        setQuestions(qs);
+        setTimeLeft(examDuration * 60);
+        setPhase("setup");
+      })
+      .catch((e: unknown) => {
+        toast.error("Failed to load exam questions: " + (e as Error).message);
+        router.push("/student/pre-exam");
+      });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Global Cleanup on Unmount ──────────────────────────────────────────────
@@ -225,29 +222,88 @@ export default function StudentExamPage() {
     return () => { cleanupResources(); };
   }, [cleanupResources]);
 
+  // ── LIFECYCLE EFFECT 1: Attach stream to video after exam phase mounts ─────
+  //
+  // This runs after React commits the DOM that contains <video ref={videoRef}>.
+  // At this point videoRef.current is guaranteed to be a valid DOM element.
+  // We attach the MediaStream, call play(), and listen for the `loadedmetadata`
+  // event which fires when the browser has enough data to render the first frame.
+  // Only then do we set videoReady = true, which gates the AI loop and timer.
+  //
+  useEffect(() => {
+    if (phase !== "exam") return;
+
+    const video = videoRef.current;
+    const stream = streamRef.current;
+
+    if (!video || !stream) {
+      // Stream was not available — should not happen in normal flow, but
+      // if it does we surface a clear error instead of silently failing.
+      console.error("[EyeZora] stream or video element unavailable after exam phase mounted.");
+      toast.error("Camera stream is unavailable. Please refresh and try again.");
+      return;
+    }
+
+    // Attach stream — this is the correct moment because React has committed
+    // the video element to the DOM, so videoRef.current is non-null.
+    video.srcObject = stream;
+
+    const onMetadata = () => {
+      console.log("[EyeZora] video.onloadedmetadata fired — video is ready.");
+      setVideoReady(true);
+    };
+
+    video.addEventListener("loadedmetadata", onMetadata);
+
+    // Initiate playback. autoPlay attribute handles most cases but explicit
+    // play() handles browsers that require user-gesture policies to be resolved.
+    video.play().catch((err) => {
+      console.error("[EyeZora] video.play() failed:", err);
+    });
+
+    return () => {
+      // Cleanup: detach stream from element when phase changes or component unmounts.
+      video.removeEventListener("loadedmetadata", onMetadata);
+      video.srcObject = null;
+      setVideoReady(false);
+    };
+  }, [phase]); // Runs exactly once when phase becomes "exam", and on cleanup.
+
+  // ── LIFECYCLE EFFECT 2: Start monitoring only after video is confirmed ready ─
+  //
+  // This is the deterministic gate. The AI loop and countdown timer are started
+  // here and ONLY here. They cannot run before the video element has loaded
+  // metadata, because videoReady is only set to true from onloadedmetadata.
+  //
+  useEffect(() => {
+    if (!videoReady) return;
+
+    console.log("[EyeZora] videoReady = true — starting timer and AI loop.");
+    startTimer();
+    startAILoop();
+
+    return () => {
+      // Cleanup intervals if videoReady flips back (e.g. exam submitted, unmount).
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      if (aiIntervalRef.current) { clearInterval(aiIntervalRef.current); aiIntervalRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoReady]); // startTimer and startAILoop are stable — they only use refs.
+
   // ── Setup Media Recorders ──────────────────────────────────────────────────
   function setupRecorders(stream: MediaStream) {
-    // Video recorder (captures all tracks)
     const videoTracks = stream.getVideoTracks();
     const audioTracks = stream.getAudioTracks();
 
     // Attach listeners to detect camera and mic disconnects/mutes
     videoTracks.forEach((track) => {
-      track.onmute = () => {
-        logViolation("CAMERA_DISCONNECTED", 100);
-      };
-      track.onended = () => {
-        logViolation("CAMERA_DISCONNECTED", 100);
-      };
+      track.onmute = () => { logViolation("CAMERA_DISCONNECTED", 100); };
+      track.onended = () => { logViolation("CAMERA_DISCONNECTED", 100); };
     });
 
     audioTracks.forEach((track) => {
-      track.onmute = () => {
-        logViolation("MICROPHONE_DISABLED", 100);
-      };
-      track.onended = () => {
-        logViolation("MICROPHONE_DISABLED", 100);
-      };
+      track.onmute = () => { logViolation("MICROPHONE_DISABLED", 100); };
+      track.onended = () => { logViolation("MICROPHONE_DISABLED", 100); };
     });
 
     if (videoTracks.length > 0) {
@@ -260,7 +316,6 @@ export default function StudentExamPage() {
       videoRecorderRef.current = videoRecorder;
     }
 
-    // Separate audio recorder
     if (audioTracks.length > 0) {
       const audioOnlyStream = new MediaStream([...audioTracks]);
       try {
@@ -282,86 +337,104 @@ export default function StudentExamPage() {
     }
   }
 
-  // ── Init Exam (fallback if not coming from pre-exam) ──────────────────────
-  async function initExam() {
+  // ── Start Exam after Fullscreen verification ──────────────────────────────
+  //
+  // This function is now responsible ONLY for:
+  //   1. Acquiring the MediaStream (if not pre-granted by pre-exam page)
+  //   2. Setting up media recorders
+  //   3. Checking AI service health
+  //   4. Starting the backend session
+  //   5. Transitioning the phase to "exam"
+  //
+  // It does NOT touch the video element, does NOT call play(), does NOT call
+  // startAILoop() or startTimer(). Those are handled declaratively by the
+  // useEffect hooks above, which run AFTER React commits the new DOM.
+  //
+  async function proceedToStartExam() {
+    setPhase("loading");
+    setFullscreenError(null);
+    let stream = streamRef.current;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play()
-          .then(() => console.log("Camera initialized"))
-          .catch((err) => console.error("Error playing video:", err));
-      } else {
-        console.log("Camera initialized");
+      // Acquire camera + microphone if not already available
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        streamRef.current = stream;
       }
+
+      // Setup recorders immediately — these work on the raw stream object
+      // and do not depend on the video element being mounted.
       setupRecorders(stream);
 
-      // Request fullscreen
+      // Check AI proctoring service health before committing to exam phase
       try {
-        await document.documentElement.requestFullscreen();
+        const health = await aiApi.healthCheck();
+        if (!health.available) {
+          toast.warning("AI Proctoring service is offline. Monitoring logs will run in connection-retry mode.");
+          setAiConnected(false);
+        } else if (!health.modelsLoaded) {
+          toast.warning("AI models are currently loading or in stub mode on the server.");
+        }
       } catch {
-        toast.error("Fullscreen is required. Please allow fullscreen access.");
-        return;
+        setAiConnected(false);
       }
 
-      await startExamSession();
-    } catch (err) {
-      toast.error("Camera and microphone permissions are required.");
-      router.push("/student/pre-exam");
+      // Start the backend exam session
+      const { sessionId } = await sessionApi.start(examId, examTitle, assignmentId);
+      sessionIdRef.current = sessionId;
+
+      // ── Phase transition ─────────────────────────────────────────────────
+      // This is all proceedToStartExam does regarding the video and monitoring.
+      // Setting phase to "exam" causes React to render <video ref={videoRef}>,
+      // after which useEffect [phase] fires and attaches the stream.
+      // Once onloadedmetadata fires, useEffect [videoReady] starts the AI loop.
+      setIsFsActive(true);
+      setPhase("exam");
+
+    } catch (err: unknown) {
+      console.error("Error starting exam:", err);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setPhase("setup");
+      setFullscreenError("Camera and microphone access are required, or the exam session failed to start.");
     }
   }
 
-  // ── Start Exam Session ─────────────────────────────────────────────────────
-  async function startExamSession() {
-    // Check AI microservice availability on startup
-    try {
-      const health = await aiApi.healthCheck();
-      if (!health.available) {
-        toast.warning("AI Proctoring service is offline. Monitoring logs will run in connection-retry mode.");
-        setAiConnected(false);
-      } else if (!health.modelsLoaded) {
-        toast.warning("AI models are currently loading or in stub mode on the server.");
+  function handleEnterFullscreenClick() {
+    setFullscreenError(null);
+    const el = document.documentElement;
+
+    const onFsChange = () => {
+      if (document.fullscreenElement) {
+        document.removeEventListener("fullscreenchange", onFsChange);
+        proceedToStartExam();
+      } else {
+        document.removeEventListener("fullscreenchange", onFsChange);
+        setFullscreenError("Fullscreen mode was not enabled. Fullscreen is mandatory to take the exam.");
+        setPhase("setup");
       }
-    } catch {
-      setAiConnected(false);
-    }
+    };
 
-    try {
-      const qs = await studentApi.getExamQuestions(examId);
-      setQuestions(qs);
-      setTimeLeft(examDuration * 60);
-    } catch (e: any) {
-      toast.error("Failed to load exam questions: " + e.message);
-      return;
-    }
+    document.addEventListener("fullscreenchange", onFsChange);
 
-    try {
-      const { sessionId } = await sessionApi.start(examId, examTitle, assignmentId);
-      sessionIdRef.current = sessionId;
-    } catch (e: any) {
-      toast.error("Failed to start exam session: " + e.message);
-      return;
-    }
-
-    // Ensure fullscreen
-    if (!document.fullscreenElement) {
-      enterFullscreen();
-      setIsFsActive(false);
-      logViolation("FULLSCREEN_EXIT", 100);
-    }
-
-    setPhase("exam");
-    startTimer();
-    startAILoop();
+    el.requestFullscreen({ navigationUI: "hide" })
+      .catch(() => {
+        document.removeEventListener("fullscreenchange", onFsChange);
+        setFullscreenError("Fullscreen request was denied or failed. Please click retry and allow fullscreen.");
+        setPhase("setup");
+      });
   }
 
   // ── Timer ──────────────────────────────────────────────────────────────────
+  // Called by useEffect [videoReady] — never called directly.
   function startTimer() {
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
           clearInterval(timerRef.current!);
+          timerRef.current = null;
           submitExam();
           return 0;
         }
@@ -371,13 +444,16 @@ export default function StudentExamPage() {
   }
 
   // ── AI Detection Loop ──────────────────────────────────────────────────────
+  // Called by useEffect [videoReady] — never called directly.
+  // When this runs, video.readyState is guaranteed >= 2 because videoReady
+  // is only set to true from the onloadedmetadata event handler.
   function startAILoop() {
     if (aiIntervalRef.current) clearInterval(aiIntervalRef.current);
 
     aiIntervalRef.current = setInterval(async () => {
       const video = videoRef.current;
 
-      // Proactive check if camera stream is disconnected/disabled
+      // Proactive check: if camera track has ended or been disabled, log it.
       if (streamRef.current) {
         const videoTrack = streamRef.current.getVideoTracks()[0];
         if (!videoTrack || videoTrack.readyState === "ended" || !videoTrack.enabled) {
@@ -385,11 +461,9 @@ export default function StudentExamPage() {
         }
       }
 
+      // Guard: video should always be ready here, but be defensive.
       if (!video || video.readyState < 2) {
-        // Explicitly play video to handle autoplay restrictions
-        if (video && video.paused) {
-          video.play().catch(() => {});
-        }
+        console.warn("[EyeZora] AI loop tick: video not ready (readyState:", video?.readyState, "). Skipping frame.");
         return;
       }
 
@@ -404,17 +478,17 @@ export default function StudentExamPage() {
       const base64 = canvas.toDataURL("image/jpeg", 0.7);
 
       try {
-        console.log("Frame transmitted");
+        console.log("Sending frame to backend...");
         const result = await aiApi.analyzeFrame(
           base64,
           user?.studentId ?? "",
           examId,
           sessionIdRef.current
         );
-        console.log("Frontend received detection");
+        console.log("Frame sent successfully");
 
         if (result) {
-          // Recovery check
+          // Recovery: if we were in a failed state, restore
           if (aiFailuresRef.current >= 5) {
             setAiConnected(true);
             aiFailuresRef.current = 0;
@@ -432,8 +506,8 @@ export default function StudentExamPage() {
             }
           }
         }
-      } catch (err: any) {
-        const errMsg = err.message || "Unknown error";
+      } catch (err: unknown) {
+        const errMsg = (err as Error).message || "Unknown error";
         console.error("Frame analysis failed:", errMsg);
         aiFailuresRef.current += 1;
         if (aiFailuresRef.current >= 5 && !aiLoggedFailureRef.current) {
@@ -451,11 +525,15 @@ export default function StudentExamPage() {
     isSubmittingRef.current = true;
     setPhase("submitting");
 
-    // Clear intervals
+    // Reset video readiness gate so if submission fails and we return to "exam",
+    // the lifecycle starts clean again.
+    setVideoReady(false);
+
+    // Clear intervals (useEffect cleanup will also do this, but be explicit)
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (aiIntervalRef.current) { clearInterval(aiIntervalRef.current); aiIntervalRef.current = null; }
 
-    // Stop media stream (releases camera hardware)
+    // Stop media stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -505,18 +583,17 @@ export default function StudentExamPage() {
         answers[q._id] !== undefined ? answers[q._id] : -1
       );
 
-      const [result, videoBlob, audioBlob] = await Promise.all([
+      const [, videoBlob, audioBlob] = await Promise.all([
         sessionApi.end(sessionIdRef.current, answersArray, examId),
         stopVideoPromise,
         stopAudioPromise,
       ]);
 
-      // Upload recordings and await the result to ensure it is not aborted
       if (videoBlob || audioBlob) {
         try {
           await sessionApi.uploadRecording(sessionIdRef.current, videoBlob, audioBlob);
           console.log("Recordings uploaded successfully");
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error("Recording upload failed:", err);
           toast.warning("Exam answers saved, but media recording upload failed.");
         }
@@ -524,8 +601,8 @@ export default function StudentExamPage() {
 
       toast.success("Exam submitted successfully!");
       setPhase("done");
-    } catch (err: any) {
-      toast.error("Submission failed: " + err.message);
+    } catch (err: unknown) {
+      toast.error("Submission failed: " + (err as Error).message);
       isSubmittingRef.current = false;
       setPhase("exam");
     }
@@ -561,6 +638,62 @@ export default function StudentExamPage() {
           <p style={{ color: "var(--text-muted)" }}>Initializing exam environment…</p>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (phase === "setup") {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg-base)",
+        padding: 20
+      }}>
+        <div className="glass-card fade-in" style={{ padding: 40, textAlign: "center", maxWidth: 520, width: "100%", background: "var(--card-bg)" }}>
+          <div style={{ fontSize: 64, marginBottom: 20 }}>⛶</div>
+          <h2 style={{ color: "var(--text-primary)", fontSize: 24, fontWeight: 800, marginBottom: 12 }}>
+            Fullscreen Mode Required
+          </h2>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+            Fullscreen mode is mandatory. Camera and microphone monitoring will begin only after fullscreen is enabled.
+          </p>
+
+          {fullscreenError && (
+            <div style={{
+              padding: "12px 16px",
+              borderRadius: 10,
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.25)",
+              marginBottom: 24,
+              textAlign: "left"
+            }}>
+              <p style={{ color: "#ef4444", fontSize: 13, margin: 0, fontWeight: 500 }}>
+                ⚠️ {fullscreenError}
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={handleEnterFullscreenClick}
+            className="btn-glow"
+            style={{
+              padding: "14px 32px",
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 700,
+              width: "100%",
+              cursor: "pointer"
+            }}
+          >
+            {fullscreenError ? "Retry" : "Enter Fullscreen"}
+          </button>
+        </div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
       </div>
     );
   }
@@ -614,7 +747,12 @@ export default function StudentExamPage() {
       flexDirection: "column",
       overflow: "hidden",
     }}>
-      {/* Hidden video element for AI analysis — active but invisible */}
+      {/*
+        Hidden video element for AI analysis.
+        This element is ONLY rendered in the exam phase JSX return, guaranteeing
+        that when useEffect [phase === "exam"] fires, videoRef.current is non-null.
+        The stream is attached by useEffect, never by imperative code.
+      */}
       <video
         ref={videoRef}
         autoPlay
@@ -633,7 +771,7 @@ export default function StudentExamPage() {
       />
 
       {/* Fullscreen Overlay */}
-      {!isFsActive && (
+      {!isFsActive && phase === "exam" && (
         <div style={{
           position: "fixed",
           top: 0, left: 0, right: 0, bottom: 0,
@@ -910,7 +1048,7 @@ export default function StudentExamPage() {
           </div>
         </div>
 
-        {/* Right Panel — AI Status (NO camera preview) */}
+        {/* Right Panel — AI Status */}
         <div style={{
           width: 220,
           background: "var(--bg-surface)",

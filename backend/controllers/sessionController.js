@@ -231,7 +231,7 @@ exports.analyzeFrame = async (req, res) => {
     }
 
     const data = await response.json();
-    console.log(`[AI Frame Analysis] Detection complete: found ${data.person_count} persons, ${data.events?.length || 0} events`);
+    console.log(`[AI Frame Analysis] Detection complete: found ${data.face_count} faces, ${data.events?.length || 0} events`);
 
     // Log detected violations in the database automatically if sessionId is present
     if (sessionId && data.events && data.events.length > 0) {
