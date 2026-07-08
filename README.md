@@ -1,3 +1,5 @@
+<img width="1630" height="192" alt="image" src="https://github.com/user-attachments/assets/168fd154-e491-4583-a3bb-8b4958b80f4e" />
+
 # 👁️ EyeZora
 
 **EyeZora** is an AI-powered online examination and intelligent remote proctoring system that enables educational institutions to conduct secure online examinations with real-time monitoring, automated violation detection, and comprehensive reporting.
@@ -204,3 +206,6 @@ node test-flow.js
 # 📄 License
 
 This project is developed for educational purposes.
+
+<img width="1610" height="26" alt="image" src="https://github.com/user-attachments/assets/25f06dcc-26d9-49ce-bf97-95db5994a37e" />
+
