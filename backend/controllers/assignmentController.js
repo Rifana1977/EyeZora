@@ -1,6 +1,20 @@
 const ExamAssignment = require("../models/ExamAssignment");
 const Student = require("../models/Student");
 const Exam = require("../models/Exam");
+const ExamSession = require("../models/ExamSession");
+const Submission = require("../models/Submission");
+const ProctoringLog = require("../models/ProctoringLog");
+const cloudinary = require("cloudinary").v2;
+const fs = require("fs");
+const path = require("path");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
 
 // ─── Helper: compute computed status from DB status + times ───────────────────
 
@@ -345,3 +359,169 @@ exports.bulkCreateAssignment = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ─── Bulk Cancel Assignments ───────────────────────────────────────────────────
+
+/**
+ * DELETE /api/admin/assignments/bulk-cancel
+ * Body: { ids: string[] }
+ * Soft-delete (status → "cancelled") for multiple assignments.
+ * Skips any assignments that are already "completed".
+ * Returns { cancelled, skipped, requested }.
+ */
+exports.bulkCancelAssignments = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids array is required" });
+    }
+
+    // Only cancel non-completed assignments
+    const result = await ExamAssignment.updateMany(
+      { _id: { $in: ids }, status: { $ne: "completed" } },
+      { status: "cancelled" }
+    );
+
+    const cancelled = result.modifiedCount;
+    const skipped = ids.length - cancelled;
+
+    res.json({ cancelled, skipped, requested: ids.length });
+  } catch (err) {
+    console.error("bulkCancelAssignments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Helper to perform cascade delete of all data associated with an assignment
+const performCascadeDelete = async (assignmentId) => {
+  try {
+    const assignment = await ExamAssignment.findById(assignmentId);
+    const student = assignment ? `${assignment.studentId}` : "Unknown";
+    const exam = assignment ? `${assignment.examId}` : "Unknown";
+
+    const sessions = await ExamSession.find({ assignmentId });
+    const sessionIds = sessions.map(s => s._id.toString());
+
+    console.log(`\n=== [CASCADE DELETE] Starting deletion for assignment ${assignmentId} ===`);
+    console.log(`Student: ${student}`);
+    console.log(`Exam: ${exam}`);
+
+    let cloudinaryCount = 0;
+    let localFileCount = 0;
+
+    for (const session of sessions) {
+      const sessionId = session._id;
+
+      // 1. Delete video and audio recordings from Cloudinary
+      if (session.recordingPublicId) {
+        try {
+          await cloudinary.uploader.destroy(session.recordingPublicId, { resource_type: "video" });
+          console.log(`[Cloudinary] Deleted video recording: ${session.recordingPublicId}`);
+          cloudinaryCount++;
+        } catch (err) {
+          console.error(`[Cloudinary] Failed to delete video recording ${session.recordingPublicId}:`, err.message);
+        }
+      }
+      if (session.audioRecordingPublicId) {
+        try {
+          await cloudinary.uploader.destroy(session.audioRecordingPublicId, { resource_type: "video" });
+          console.log(`[Cloudinary] Deleted audio recording: ${session.audioRecordingPublicId}`);
+          cloudinaryCount++;
+        } catch (err) {
+          console.error(`[Cloudinary] Failed to delete audio recording ${session.audioRecordingPublicId}:`, err.message);
+        }
+      }
+
+      // 2. Delete text log file from local filesystem
+      if (session.logFilePath) {
+        try {
+          const fullPath = path.join(__dirname, "../", session.logFilePath);
+          if (fs.existsSync(fullPath)) {
+            fs.unlinkSync(fullPath);
+            console.log(`[Local Disk] Deleted proctoring log file: ${fullPath}`);
+            localFileCount++;
+          }
+        } catch (err) {
+          console.error(`[Local Disk] Failed to delete log file for session ${sessionId}:`, err.message);
+        }
+      }
+
+      // 3. Delete associated ProctoringLog events
+      const deletedLogs = await ProctoringLog.deleteMany({ sessionId });
+      console.log(`[Database] Deleted ${deletedLogs.deletedCount} proctoring logs for session ${sessionId}`);
+
+      // 4. Delete associated Submission (report)
+      const deletedSubmissions = await Submission.deleteMany({ examSessionId: sessionId });
+      console.log(`[Database] Deleted ${deletedSubmissions.deletedCount} submissions (reports) for session ${sessionId}`);
+
+      // 5. Delete the ExamSession itself
+      await ExamSession.findByIdAndDelete(sessionId);
+      console.log(`[Database] Deleted ExamSession document: ${sessionId}`);
+    }
+
+    // 6. Delete the ExamAssignment document itself
+    const deletedAssignment = await ExamAssignment.findByIdAndDelete(assignmentId);
+    console.log(`[Database] Deleted ExamAssignment document: ${assignmentId}`);
+    
+    console.log(`=== [CASCADE DELETE] Successfully completed for assignment ${assignmentId} ===\n`);
+    return {
+      sessionsCount: sessions.length,
+      cloudinaryCount,
+      localFileCount
+    };
+  } catch (err) {
+    console.error(`[Cascade Delete Error] Failed for assignment ${assignmentId}:`, err);
+    throw err;
+  }
+};
+
+// ─── Delete Single Assignment (Hard Delete with Cascade) ──────────────────────
+/**
+ * DELETE /api/admin/assignments/:id
+ * Hard deletes assignment and all associated sessions, reports, logs, and cloud recordings.
+ */
+exports.deleteAssignment = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Perform cascade delete
+    await performCascadeDelete(id);
+
+    res.json({ message: "Assignment and all related proctoring sessions, reports, logs, and media recordings deleted successfully." });
+  } catch (err) {
+    console.error("deleteAssignment error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Delete Multiple Assignments (Bulk Delete with Cascade) ───────────────────
+/**
+ * DELETE /api/admin/assignments
+ * Body: { assignmentIds: string[] }
+ * Hard deletes multiple assignments and all associated sessions, reports, logs, and recordings.
+ */
+exports.bulkDeleteAssignments = async (req, res) => {
+  try {
+    const { assignmentIds } = req.body;
+    const ids = assignmentIds || req.body.ids;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "assignmentIds array is required." });
+    }
+
+    // Perform cascade delete for each assignment
+    for (const id of ids) {
+      await performCascadeDelete(id);
+    }
+
+    res.json({
+      message: `${ids.length} assignment(s) and all related sessions, reports, logs, and recordings deleted successfully.`,
+      deleted: ids.length,
+      requested: ids.length,
+    });
+  } catch (err) {
+    console.error("bulkDeleteAssignments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+

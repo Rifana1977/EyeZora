@@ -17,13 +17,16 @@ const {
   registerStudent,
   updateStudent,
   deleteStudent,
+  bulkDeleteStudents,
   getExamSessions,
   getSessionReport,
+  bulkDeleteSessions,
   getDashboardStats,
   bulkImportStudents,
   getResults,
   publishResults,
   unpublishResults,
+  bulkDeleteSubmissions,
 } = require("../controllers/adminController");
 
 const {
@@ -33,6 +36,9 @@ const {
   updateAssignment,
   cancelAssignment,
   getStudentAssignment,
+  bulkCancelAssignments,
+  deleteAssignment,
+  bulkDeleteAssignments,
 } = require("../controllers/assignmentController");
 
 // Multer config for bulk import (CSV/XLSX)
@@ -74,6 +80,8 @@ router.delete("/question/:id", deleteQuestion);
 // ── Student Routes ──────────────────────────────────────
 router.get("/students", getStudents);
 router.post("/students", registerStudent);
+// IMPORTANT: bulk-delete BEFORE /:id so Express doesn't treat "bulk-delete" as an ID
+router.delete("/students/bulk-delete", bulkDeleteStudents);
 router.put("/students/:id", updateStudent);
 router.delete("/students/:id", deleteStudent);
 router.post("/students/bulk-import", importUpload.single("file"), bulkImportStudents);
@@ -82,12 +90,17 @@ router.post("/students/bulk-import", importUpload.single("file"), bulkImportStud
 router.get("/assignments", getAssignments);
 router.post("/assignments", createAssignment);
 router.post("/assignments/bulk", bulkCreateAssignment);
+// IMPORTANT: bulk routes BEFORE /:id parameterised routes
+router.delete("/assignments/bulk-cancel", bulkCancelAssignments);
+router.delete("/assignments", bulkDeleteAssignments);
 router.put("/assignments/:id", updateAssignment);
-router.delete("/assignments/:id", cancelAssignment);
+router.delete("/assignments/:id", deleteAssignment);
 router.get("/assignments/student/:studentId", getStudentAssignment);
 
 // ── Monitoring Routes ───────────────────────────────────
 router.get("/sessions", getExamSessions);
+// IMPORTANT: bulk-delete BEFORE /:id/report
+router.delete("/sessions/bulk-delete", bulkDeleteSessions);
 router.get("/sessions/:id/report", getSessionReport);
 router.get("/stats", getDashboardStats);
 
@@ -95,5 +108,7 @@ router.get("/stats", getDashboardStats);
 router.get("/results", getResults);
 router.post("/results/publish", publishResults);
 router.post("/results/unpublish", unpublishResults);
+// IMPORTANT: bulk-delete BEFORE any /:id routes
+router.delete("/results/bulk-delete", bulkDeleteSubmissions);
 
 module.exports = router;

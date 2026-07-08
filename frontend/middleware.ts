@@ -20,7 +20,17 @@ export function middleware(req: NextRequest) {
   }
 
   // ── Protect /student/* routes ────────────────────────────────────────────
-  if (pathname.startsWith("/student") && !pathname.startsWith("/student/login")) {
+  // Public student routes that do NOT require authentication:
+  const PUBLIC_STUDENT_ROUTES = [
+    "/student/login",
+    "/student/forgot-password",
+    "/student/reset-password",
+  ];
+  const isPublicStudentRoute = PUBLIC_STUDENT_ROUTES.some((r) =>
+    pathname.startsWith(r)
+  );
+
+  if (pathname.startsWith("/student") && !isPublicStudentRoute) {
     if (!token || role !== "student") {
       return NextResponse.redirect(new URL("/student/login", req.url));
     }

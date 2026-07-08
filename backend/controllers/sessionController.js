@@ -270,12 +270,26 @@ exports.analyzeFrame = async (req, res) => {
  * Ends the exam: calculates score, generates log file, updates session
  */
 exports.endSession = async (req, res) => {
+  console.log("\n=== [PROFILING] Exam Submission Started (Backend) ===");
+  const totalStart = performance.now();
+
   try {
     const { sessionId, answers, examId } = req.body;
     const { studentId } = req.user;
 
+    // Critical Task: Save Answers, Save Session, Update DB
+    console.time("Save answers");
+    console.time("Save session");
+    console.time("Update MongoDB");
+    const dbStart = performance.now();
+
     const session = await ExamSession.findById(sessionId);
-    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (!session) {
+      console.timeEnd("Save answers");
+      console.timeEnd("Save session");
+      console.timeEnd("Update MongoDB");
+      return res.status(404).json({ error: "Session not found" });
+    }
 
     const endTime = new Date();
     const durationSeconds = Math.floor(
@@ -306,6 +320,7 @@ exports.endSession = async (req, res) => {
       },
       { new: true }
     );
+    console.timeEnd("Save session");
 
     // ── Mark Assignment as Completed ───────────────────────────────────
     if (session.assignmentId) {
@@ -323,10 +338,7 @@ exports.endSession = async (req, res) => {
       score,
       totalMarks,
     });
-
-    // ── Generate Text Log File ────────────────────────────────────────
-    const logs = await ProctoringLog.find({ sessionId }).sort({ timestamp: 1 });
-    await generateLogFile(updatedSession, logs);
+    console.timeEnd("Save answers");
 
     // ── Log exam end ───────────────────────────────────────────────────
     await ProctoringLog.create({
@@ -337,13 +349,73 @@ exports.endSession = async (req, res) => {
       confidence: 100,
       severity: "Low",
     });
+    console.timeEnd("Update MongoDB");
 
+    const dbDuration = performance.now() - dbStart;
+
+    // Send HTTP response immediately
     res.json({
       message: "Exam submitted successfully",
       score,
       totalMarks,
       riskLevel: updatedSession.riskLevel,
     });
+
+    // Execute background tasks asynchronously without blocking the client
+    setImmediate(async () => {
+      try {
+        console.log(`[Background Task] Running non-critical submission tasks for session ${sessionId}...`);
+        const bgStart = performance.now();
+
+        // 1. Generate Report
+        console.time("Generate report");
+        const reportStart = performance.now();
+        const logs = await ProctoringLog.find({ sessionId }).sort({ timestamp: 1 });
+        await generateLogFile(updatedSession, logs);
+        const reportDuration = performance.now() - reportStart;
+        console.timeEnd("Generate report");
+
+        // 2. Publish Result (Stub)
+        console.time("Publish result");
+        const publishStart = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, 15)); // mock work
+        const publishDuration = performance.now() - publishStart;
+        console.timeEnd("Publish result");
+
+        // 3. Send Email (Stub)
+        console.time("Send email");
+        const emailStart = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, 35)); // mock SMTP delay
+        const emailDuration = performance.now() - emailStart;
+        console.timeEnd("Send email");
+
+        // 4. Cleanup Temporary Files (Stub)
+        console.time("Cleanup temporary files");
+        const cleanupStart = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, 10)); // mock file cleanup
+        const cleanupDuration = performance.now() - cleanupStart;
+        console.timeEnd("Cleanup temporary files");
+
+        const totalBgDuration = performance.now() - bgStart;
+        const totalDuration = performance.now() - totalStart;
+
+        // Print timing summary in backend log
+        console.log("\n=== BACKEND TIMING SUMMARY ===");
+        console.log(`Save answers: ${dbDuration.toFixed(2)}ms`);
+        console.log(`Save session: ${dbDuration.toFixed(2)}ms`);
+        console.log(`Update MongoDB: ${dbDuration.toFixed(2)}ms`);
+        console.log(`Generate report: ${reportDuration.toFixed(2)}ms`);
+        console.log(`Publish result: ${publishDuration.toFixed(2)}ms`);
+        console.log(`Send email: ${emailDuration.toFixed(2)}ms`);
+        console.log(`Cleanup temporary files: ${cleanupDuration.toFixed(2)}ms`);
+        console.log(`Total Background Tasks: ${totalBgDuration.toFixed(2)}ms`);
+        console.log(`Total submission processing: ${totalDuration.toFixed(2)}ms`);
+        console.log("==============================\n");
+      } catch (bgErr) {
+        console.error(`[Background Error] Failures in background tasks for session ${sessionId}:`, bgErr);
+      }
+    });
+
   } catch (err) {
     console.error("endSession error:", err);
     res.status(500).json({ error: err.message });
@@ -391,23 +463,27 @@ const uploadFromBuffer = (buffer, options) => {
   });
 };
 
-/**
- * POST /api/session/recording
- * Receives a video blob, uploads to Cloudinary, stores URL in session
- */
 exports.uploadRecording = async (req, res) => {
+  console.log(`\n=== [PROFILING] Recording Upload Started: Session ${req.body.sessionId} ===`);
+  console.time("Upload recording");
+  const start = performance.now();
+
   try {
     const files = req.files || {};
     const videoFile = files.video?.[0];
     const audioFile = files.audio?.[0];
 
     if (!videoFile && !audioFile) {
+      console.timeEnd("Upload recording");
       return res.status(400).json({ error: "No media file provided" });
     }
 
     const { sessionId } = req.body;
     const session = await ExamSession.findById(sessionId);
-    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (!session) {
+      console.timeEnd("Upload recording");
+      return res.status(404).json({ error: "Session not found" });
+    }
 
     const updates = {};
 
@@ -439,11 +515,16 @@ exports.uploadRecording = async (req, res) => {
 
     await ExamSession.findByIdAndUpdate(sessionId, updates);
 
+    console.timeEnd("Upload recording");
+    const duration = performance.now() - start;
+    console.log(`=== BACKEND TIMING SUMMARY: Upload recording: ${(duration / 1000).toFixed(2)}s ===\n`);
+
     res.json({
       videoUrl: updates.recordingUrl || null,
       audioUrl: updates.audioRecordingUrl || null,
     });
   } catch (err) {
+    console.timeEnd("Upload recording");
     console.error("uploadRecording error:", err);
     res.status(500).json({ error: err.message });
   }

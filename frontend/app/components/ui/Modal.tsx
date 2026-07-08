@@ -139,6 +139,7 @@ interface ConfirmProps {
   message: string;
   confirmLabel?: string;
   danger?: boolean;
+  loading?: boolean;
 }
 
 export function ConfirmDialog({
@@ -149,31 +150,50 @@ export function ConfirmDialog({
   message,
   confirmLabel = "Confirm",
   danger = false,
+  loading = false,
 }: ConfirmProps) {
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={loading ? () => {} : onClose}
       title={title}
       size="sm"
       footer={
         <>
+          <style>{`
+            @keyframes confirm-spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .confirm-spinner {
+              border: 2px solid rgba(255,255,255,0.3);
+              border-radius: 50%;
+              border-top: 2px solid #fff;
+              width: 14px;
+              height: 14px;
+              animation: confirm-spin 1s linear infinite;
+              display: inline-block;
+            }
+          `}</style>
           <button
             onClick={onClose}
+            disabled={loading}
             style={{
               background: "rgba(255,255,255,0.08)",
               border: "1px solid var(--bg-border)",
               color: "var(--text-secondary)",
               padding: "8px 18px",
               borderRadius: 8,
-              cursor: "pointer",
+              cursor: loading ? "not-allowed" : "pointer",
               fontWeight: 500,
+              opacity: loading ? 0.5 : 1,
             }}
           >
             Cancel
           </button>
           <button
-            onClick={() => { onConfirm(); onClose(); }}
+            onClick={loading ? undefined : onConfirm}
+            disabled={loading}
             style={{
               background: danger
                 ? "linear-gradient(135deg,#b91c1c,#ef4444)"
@@ -182,11 +202,16 @@ export function ConfirmDialog({
               color: "#fff",
               padding: "8px 18px",
               borderRadius: 8,
-              cursor: "pointer",
+              cursor: loading ? "not-allowed" : "pointer",
               fontWeight: 600,
+              opacity: loading ? 0.7 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            {confirmLabel}
+            {loading && <span className="confirm-spinner" />}
+            {loading ? "Processing..." : confirmLabel}
           </button>
         </>
       }

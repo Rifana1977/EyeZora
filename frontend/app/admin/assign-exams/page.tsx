@@ -6,6 +6,9 @@ import { adminApi } from "@/lib/api";
 import Modal, { ConfirmDialog } from "@/app/components/ui/Modal";
 import { toast } from "@/app/components/ui/Toast";
 import { SkeletonRow } from "@/app/components/ui/Skeleton";
+import { useRowSelection } from "@/lib/hooks/useRowSelection";
+import { SelectAllCheckbox } from "@/app/components/ui/SelectAllCheckbox";
+import { BulkActionToolbar } from "@/app/components/ui/BulkActionToolbar";
 
 interface Assignment {
   _id: string;
@@ -85,7 +88,8 @@ export default function AssignExamsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Bulk assignment states
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -100,6 +104,11 @@ export default function AssignExamsPage() {
   const [bulkStudentSearch, setBulkStudentSearch] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkResults, setBulkResults] = useState<any>(null);
+
+  // Bulk row selection (for table delete)
+  const sel = useRowSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   function openBulkAssign() {
     setBulkForm({
@@ -269,15 +278,35 @@ export default function AssignExamsPage() {
     }
   }
 
-  async function handleCancel() {
-    if (!cancelId) return;
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
     try {
-      await adminApi.cancelAssignment(cancelId);
-      toast.success("Assignment cancelled");
-      setCancelId(null);
+      await adminApi.deleteAssignment(deleteId);
+      toast.success("Assignment deleted successfully.");
+      setDeleteId(null);
+      sel.clearSelection();
       load();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || "Failed to delete assignment.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (sel.selectedCount === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await adminApi.bulkDeleteAssignments(sel.selectedArray);
+      toast.success(res.message || `${sel.selectedCount} assignment(s) deleted successfully.`);
+      sel.clearSelection();
+      setBulkDeleteOpen(false);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Bulk delete failed.");
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -364,13 +393,13 @@ export default function AssignExamsPage() {
             className="ez-input"
             placeholder="Search by name, student ID, or email…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); sel.clearSelection(); }}
             style={{ maxWidth: 320 }}
           />
           <select
             className="ez-input"
             value={filterExam}
-            onChange={(e) => { setFilterExam(e.target.value); setPage(1); }}
+            onChange={(e) => { setFilterExam(e.target.value); setPage(1); sel.clearSelection(); }}
             style={{ maxWidth: 200 }}
           >
             <option value="all">All Exams</option>
@@ -381,7 +410,7 @@ export default function AssignExamsPage() {
           <select
             className="ez-input"
             value={filterStatus}
-            onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+            onChange={(e) => { setFilterStatus(e.target.value); setPage(1); sel.clearSelection(); }}
             style={{ maxWidth: 160 }}
           >
             <option value="all">All Statuses</option>
@@ -394,12 +423,30 @@ export default function AssignExamsPage() {
           </select>
         </div>
 
+        {/* Bulk Action Toolbar */}
+        <BulkActionToolbar
+          count={sel.selectedCount}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={sel.clearSelection}
+          deleting={bulkDeleting}
+          deleteLabel="🗑 Delete Selected"
+          noun="assignments"
+        />
+
         {/* Table */}
         <div className="glass-card" style={{ overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <table className="ez-table">
               <thead>
                 <tr>
+                  <th style={{ width: 40, textAlign: "center" }}>
+                    <SelectAllCheckbox
+                      checked={sel.isAllSelected(assignments.map(a => a._id))}
+                      indeterminate={sel.isIndeterminate(assignments.map(a => a._id))}
+                      onChange={() => sel.toggleAll(assignments.map(a => a._id))}
+                      disabled={loading || assignments.length === 0}
+                    />
+                  </th>
                   <th>Student</th>
                   <th>Assigned Exam</th>
                   <th>Duration</th>
@@ -413,14 +460,30 @@ export default function AssignExamsPage() {
                   [1, 2, 3, 4].map((i) => <SkeletonRow key={i} />)
                 ) : assignments.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
+                    <td colSpan={7} style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
                       <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
                       <p>No assignments found</p>
                     </td>
                   </tr>
                 ) : (
-                  assignments.map((a) => (
-                    <tr key={a._id}>
+                  assignments.map((a) => {
+                    const isSelected = sel.selected.has(a._id);
+                    return (
+                      <tr
+                        key={a._id}
+                        style={{
+                          background: isSelected ? "rgba(124,58,237,0.06)" : undefined,
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => sel.toggleOne(a._id)}
+                            style={{ accentColor: "#7c3aed", width: 15, height: 15, cursor: "pointer" }}
+                          />
+                        </td>
                       <td>
                         <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
                           {a.studentObjectId?.name || a.studentId}
@@ -467,25 +530,25 @@ export default function AssignExamsPage() {
                               Edit
                             </button>
                           )}
-                          {!["completed", "cancelled"].includes(a.status) && (
-                            <button
-                              onClick={() => setCancelId(a._id)}
-                              style={{
-                                padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
-                                color: "#ef4444", cursor: "pointer", transition: "all 0.15s",
-                              }}
-                              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
-                              onMouseOut={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
-                            >
-                              Cancel
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setDeleteId(a._id)}
+                            style={{
+                              padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                              background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+                              color: "#ef4444", cursor: "pointer", transition: "all 0.15s",
+                            }}
+                            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
+                            onMouseOut={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  ))
+                  );
+                  })
                 )}
+
               </tbody>
             </table>
           </div>
@@ -501,7 +564,7 @@ export default function AssignExamsPage() {
               </span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => { setPage(p => Math.max(1, p - 1)); sel.clearSelection(); }}
                   disabled={page === 1}
                   style={{
                     padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
@@ -519,7 +582,7 @@ export default function AssignExamsPage() {
                   {page} / {totalPages}
                 </span>
                 <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => { setPage(p => Math.min(totalPages, p + 1)); sel.clearSelection(); }}
                   disabled={page === totalPages}
                   style={{
                     padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
@@ -835,15 +898,28 @@ export default function AssignExamsPage() {
         )}
       </Modal>
 
-      {/* Cancel Confirm */}
+      {/* Delete Confirm (single) */}
       <ConfirmDialog
-        isOpen={!!cancelId}
-        onClose={() => setCancelId(null)}
-        onConfirm={handleCancel}
-        title="Cancel Assignment"
-        message="Cancel this exam assignment? The student will no longer have access to this exam."
-        confirmLabel="Cancel Assignment"
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete Assignment"
+        message="Are you sure you want to permanently remove this assignment record? This action cannot be undone."
+        confirmLabel="Delete"
         danger
+        loading={deleting}
+      />
+
+      {/* Bulk Delete Confirm */}
+      <ConfirmDialog
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected Assignments"
+        message={`Are you sure you want to delete ${sel.selectedCount} assignment${sel.selectedCount !== 1 ? "s" : ""}? This will permanently remove the assignment records. This action cannot be undone.`}
+        confirmLabel={`Delete ${sel.selectedCount} Assignment${sel.selectedCount !== 1 ? "s" : ""}`}
+        danger
+        loading={bulkDeleting}
       />
     </div>
   );

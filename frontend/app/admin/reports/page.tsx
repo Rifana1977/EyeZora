@@ -5,6 +5,10 @@ import Sidebar from "@/app/components/Sidebar";
 import { adminApi } from "@/lib/api";
 import { toast } from "@/app/components/ui/Toast";
 import { SkeletonRow } from "@/app/components/ui/Skeleton";
+import { ConfirmDialog } from "@/app/components/ui/Modal";
+import { useRowSelection } from "@/lib/hooks/useRowSelection";
+import { SelectAllCheckbox } from "@/app/components/ui/SelectAllCheckbox";
+import { BulkActionToolbar } from "@/app/components/ui/BulkActionToolbar";
 
 interface Result {
   _id: string;
@@ -31,8 +35,12 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [filterExam, setFilterExam] = useState("all");
   const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toggling, setToggling] = useState<string | null>(null);
+
+  // Bulk selection — replaces the old selectedIds: string[] partial implementation
+  const sel = useRowSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -53,7 +61,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     load();
-  }, [filterExam]);
+  }, [filterExam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function togglePublishSingle(id: string, currentlyPublished: boolean) {
     setToggling(id);
@@ -74,22 +82,42 @@ export default function ReportsPage() {
   }
 
   async function handleBulkPublish(publish: boolean) {
-    if (selectedIds.length === 0) {
+    if (sel.selectedCount === 0) {
       toast.error("No results selected");
       return;
     }
     try {
       if (publish) {
-        const res = await adminApi.publishResults({ submissionIds: selectedIds });
-        toast.success(res.message || `Published ${selectedIds.length} results`);
+        const res = await adminApi.publishResults({ submissionIds: sel.selectedArray });
+        toast.success(res.message || `Published ${sel.selectedCount} results`);
       } else {
-        await adminApi.unpublishResults({ submissionIds: selectedIds });
-        toast.success(`Unpublished ${selectedIds.length} results`);
+        await adminApi.unpublishResults({ submissionIds: sel.selectedArray });
+        toast.success(`Unpublished ${sel.selectedCount} results`);
       }
-      setSelectedIds([]);
+      sel.clearSelection();
       load();
     } catch (err: any) {
       toast.error(err.message || "Action failed");
+    }
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    try {
+      const res = await adminApi.bulkDeleteSubmissions(sel.selectedArray);
+      const { deleted, requested } = res;
+      if (deleted === requested) {
+        toast.success(`${deleted} result record${deleted !== 1 ? "s" : ""} deleted successfully.`);
+      } else {
+        toast.success(`Deleted ${deleted} of ${requested} result records.`);
+      }
+      sel.clearSelection();
+      setBulkDeleteOpen(false);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Bulk delete failed");
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -98,6 +126,8 @@ export default function ReportsPage() {
     r.studentId.toLowerCase().includes(search.toLowerCase()) ||
     r.examTitle.toLowerCase().includes(search.toLowerCase())
   );
+
+  const filteredIds = filtered.map((r) => r._id);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }} className="animated-bg">
@@ -114,33 +144,6 @@ export default function ReportsPage() {
               Review scores and toggle student access visibility for exam results.
             </p>
           </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            {selectedIds.length > 0 && (
-              <>
-                <button
-                  onClick={() => handleBulkPublish(true)}
-                  style={{
-                    padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)",
-                    cursor: "pointer"
-                  }}
-                >
-                  📢 Publish Selected ({selectedIds.length})
-                </button>
-                <button
-                  onClick={() => handleBulkPublish(false)}
-                  style={{
-                    padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)",
-                    cursor: "pointer"
-                  }}
-                >
-                  🔒 Unpublish Selected
-                </button>
-              </>
-            )}
-          </div>
         </div>
 
         {/* Filters */}
@@ -149,14 +152,14 @@ export default function ReportsPage() {
             className="ez-input"
             placeholder="Search by student name, ID, or exam title…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); sel.clearSelection(); }}
             style={{ maxWidth: 360 }}
           />
 
           <select
             className="ez-input"
             value={filterExam}
-            onChange={(e) => setFilterExam(e.target.value)}
+            onChange={(e) => { setFilterExam(e.target.value); sel.clearSelection(); }}
             style={{ maxWidth: 220 }}
           >
             <option value="all">All Exams</option>
@@ -168,24 +171,57 @@ export default function ReportsPage() {
           </select>
         </div>
 
+        {/* Bulk Action Toolbar — with Publish/Unpublish as extraActions */}
+        <BulkActionToolbar
+          count={sel.selectedCount}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={sel.clearSelection}
+          deleting={bulkDeleting}
+          noun="results"
+          extraActions={
+            <>
+              <button
+                onClick={() => handleBulkPublish(true)}
+                style={{
+                  padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  background: "rgba(16,185,129,0.1)", color: "#10b981",
+                  border: "1px solid rgba(16,185,129,0.3)", cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.background = "rgba(16,185,129,0.18)")}
+                onMouseOut={(e) => (e.currentTarget.style.background = "rgba(16,185,129,0.1)")}
+              >
+                📢 Publish Selected
+              </button>
+              <button
+                onClick={() => handleBulkPublish(false)}
+                style={{
+                  padding: "7px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  background: "rgba(100,116,139,0.1)", color: "#64748b",
+                  border: "1px solid rgba(100,116,139,0.25)", cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.background = "rgba(100,116,139,0.18)")}
+                onMouseOut={(e) => (e.currentTarget.style.background = "rgba(100,116,139,0.1)")}
+              >
+                🔒 Unpublish Selected
+              </button>
+            </>
+          }
+        />
+
         {/* Results Table */}
         <div className="glass-card" style={{ overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <table className="ez-table">
               <thead>
                 <tr>
-                  <th style={{ width: 40 }}>
-                    <input
-                      type="checkbox"
-                      checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedIds(filtered.map((r) => r._id));
-                        } else {
-                          setSelectedIds([]);
-                        }
-                      }}
-                      style={{ accentColor: "#7c3aed" }}
+                  <th style={{ width: 40, textAlign: "center" }}>
+                    <SelectAllCheckbox
+                      checked={sel.isAllSelected(filteredIds)}
+                      indeterminate={sel.isIndeterminate(filteredIds)}
+                      onChange={() => sel.toggleAll(filteredIds)}
+                      disabled={loading || filtered.length === 0}
                     />
                   </th>
                   <th>Student</th>
@@ -209,21 +245,21 @@ export default function ReportsPage() {
                   </tr>
                 ) : (
                   filtered.map((r) => {
-                    const isSelected = selectedIds.includes(r._id);
+                    const isSelected = sel.selected.has(r._id);
                     return (
-                      <tr key={r._id}>
-                        <td>
+                      <tr
+                        key={r._id}
+                        style={{
+                          background: isSelected ? "rgba(124,58,237,0.06)" : undefined,
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        <td style={{ textAlign: "center" }}>
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => {
-                              if (isSelected) {
-                                setSelectedIds(selectedIds.filter((id) => id !== r._id));
-                              } else {
-                                setSelectedIds([...selectedIds, r._id]);
-                              }
-                            }}
-                            style={{ accentColor: "#7c3aed" }}
+                            onChange={() => sel.toggleOne(r._id)}
+                            style={{ accentColor: "#7c3aed", width: 15, height: 15, cursor: "pointer" }}
                           />
                         </td>
                         <td>
@@ -292,6 +328,17 @@ export default function ReportsPage() {
           </div>
         </div>
       </main>
+
+      {/* Bulk Delete Confirm */}
+      <ConfirmDialog
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Result Records"
+        message={`Are you sure you want to delete ${sel.selectedCount} result record${sel.selectedCount !== 1 ? "s" : ""}? This action cannot be undone.`}
+        confirmLabel={`Delete ${sel.selectedCount} Record${sel.selectedCount !== 1 ? "s" : ""}`}
+        danger
+      />
     </div>
   );
 }

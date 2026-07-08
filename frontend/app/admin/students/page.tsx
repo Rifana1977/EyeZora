@@ -6,6 +6,9 @@ import { adminApi } from "@/lib/api";
 import Modal, { ConfirmDialog } from "@/app/components/ui/Modal";
 import { toast } from "@/app/components/ui/Toast";
 import { SkeletonRow } from "@/app/components/ui/Skeleton";
+import { useRowSelection } from "@/lib/hooks/useRowSelection";
+import { SelectAllCheckbox } from "@/app/components/ui/SelectAllCheckbox";
+import { BulkActionToolbar } from "@/app/components/ui/BulkActionToolbar";
 
 interface Student {
   _id: string;
@@ -30,6 +33,11 @@ export default function StudentsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState("");
 
+  // Bulk selection
+  const sel = useRowSelection();
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // Bulk import states
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -40,7 +48,7 @@ export default function StudentsPage() {
   function downloadCredentialsCSV(credentials: any[]) {
     const headers = ["Student ID", "Name", "Email", "Temporary Password"];
     const rows = credentials.map(c => [c.studentId, c.name, c.email, c.tempPassword]);
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
       + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -119,9 +127,30 @@ export default function StudentsPage() {
       await adminApi.deleteStudent(deleteId);
       toast.success("Student removed");
       setDeleteId(null);
+      sel.clearSelection();
       load();
     } catch (err: any) {
       toast.error(err.message);
+    }
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    try {
+      const res = await adminApi.bulkDeleteStudents(sel.selectedArray);
+      const { deleted, requested } = res;
+      if (deleted === requested) {
+        toast.success(`${deleted} student${deleted !== 1 ? "s" : ""} deleted successfully.`);
+      } else {
+        toast.success(`Deleted ${deleted} of ${requested} students.`);
+      }
+      sel.clearSelection();
+      setBulkDeleteOpen(false);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Bulk delete failed");
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -130,6 +159,8 @@ export default function StudentsPage() {
     s.studentId.toLowerCase().includes(search.toLowerCase()) ||
     s.email.toLowerCase().includes(search.toLowerCase())
   );
+
+  const filteredIds = filtered.map((s) => s._id);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }} className="animated-bg">
@@ -176,7 +207,7 @@ export default function StudentsPage() {
             className="ez-input"
             placeholder="Search by name, ID, or email…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); sel.clearSelection(); }}
             style={{ maxWidth: 400 }}
           />
         </div>
@@ -205,12 +236,29 @@ export default function StudentsPage() {
           </div>
         </div>
 
+        {/* Bulk Action Toolbar */}
+        <BulkActionToolbar
+          count={sel.selectedCount}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={sel.clearSelection}
+          deleting={bulkDeleting}
+          noun="students"
+        />
+
         {/* Table */}
         <div className="glass-card" style={{ overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
             <table className="ez-table">
               <thead>
                 <tr>
+                  <th style={{ width: 40, textAlign: "center" }}>
+                    <SelectAllCheckbox
+                      checked={sel.isAllSelected(filteredIds)}
+                      indeterminate={sel.isIndeterminate(filteredIds)}
+                      onChange={() => sel.toggleAll(filteredIds)}
+                      disabled={loading || filtered.length === 0}
+                    />
+                  </th>
                   <th>Student ID</th>
                   <th>Name</th>
                   <th>Email</th>
@@ -224,86 +272,103 @@ export default function StudentsPage() {
                   [1, 2, 3].map((i) => <SkeletonRow key={i} />)
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
+                    <td colSpan={7} style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
                       {search ? "No students match your search" : "No students registered yet"}
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((s) => (
-                    <tr key={s._id}>
-                      <td>
-                        <span style={{ fontFamily: "monospace", color: "#a78bfa", fontWeight: 700, fontSize: 13 }}>
-                          {s.studentId}
-                        </span>
-                      </td>
-                      <td style={{ color: "var(--text-primary)", fontWeight: 600 }}>{s.name}</td>
-                      <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>{s.email}</td>
-                      <td>
-                        <span style={{
-                          padding: "3px 10px",
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          background: s.isActive ? "rgba(16,185,129,0.12)" : "rgba(100,116,139,0.12)",
-                          color: s.isActive ? "#10b981" : "#64748b",
-                          border: `1px solid ${s.isActive ? "rgba(16,185,129,0.3)" : "rgba(100,116,139,0.3)"}`,
-                        }}>
-                          {s.isActive ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {new Date(s.createdAt).toLocaleDateString("en-IN")}
-                      </td>
-                      <td>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const updatedStatus = !s.isActive;
-                              await adminApi.updateStudent(s._id, { isActive: updatedStatus });
-                              toast.success(`Student ${s.name} is now ${updatedStatus ? "Active" : "Inactive"}`);
-                              load();
-                            } catch (err: any) {
-                              toast.error(err.message || "Failed to update status");
-                            }
-                          }}
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: 8,
-                            background: s.isActive ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)",
-                            border: `1px solid ${s.isActive ? "rgba(239,68,68,0.2)" : "rgba(16,185,129,0.2)"}`,
-                            color: s.isActive ? "#ef4444" : "#10b981",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            marginRight: 8,
-                            transition: "all 0.15s",
-                          }}
-                          onMouseOver={(e) => (e.currentTarget.style.background = s.isActive ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)")}
-                          onMouseOut={(e) => (e.currentTarget.style.background = s.isActive ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)")}
-                        >
-                          {s.isActive ? "Deactivate" : "Activate"}
-                        </button>
-                        <button
-                          onClick={() => { setDeleteId(s._id); setDeleteName(s.name); }}
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: 8,
-                            background: "rgba(239,68,68,0.08)",
-                            border: "1px solid rgba(239,68,68,0.25)",
-                            color: "#ef4444",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            transition: "all 0.15s",
-                          }}
-                          onMouseOver={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
-                          onMouseOut={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  filtered.map((s) => {
+                    const isSelected = sel.selected.has(s._id);
+                    return (
+                      <tr
+                        key={s._id}
+                        style={{
+                          background: isSelected ? "rgba(124,58,237,0.06)" : undefined,
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => sel.toggleOne(s._id)}
+                            style={{ accentColor: "#7c3aed", width: 15, height: 15, cursor: "pointer" }}
+                          />
+                        </td>
+                        <td>
+                          <span style={{ fontFamily: "monospace", color: "#a78bfa", fontWeight: 700, fontSize: 13 }}>
+                            {s.studentId}
+                          </span>
+                        </td>
+                        <td style={{ color: "var(--text-primary)", fontWeight: 600 }}>{s.name}</td>
+                        <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>{s.email}</td>
+                        <td>
+                          <span style={{
+                            padding: "3px 10px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: s.isActive ? "rgba(16,185,129,0.12)" : "rgba(100,116,139,0.12)",
+                            color: s.isActive ? "#10b981" : "#64748b",
+                            border: `1px solid ${s.isActive ? "rgba(16,185,129,0.3)" : "rgba(100,116,139,0.3)"}`,
+                          }}>
+                            {s.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                          {new Date(s.createdAt).toLocaleDateString("en-IN")}
+                        </td>
+                        <td>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const updatedStatus = !s.isActive;
+                                await adminApi.updateStudent(s._id, { isActive: updatedStatus });
+                                toast.success(`Student ${s.name} is now ${updatedStatus ? "Active" : "Inactive"}`);
+                                load();
+                              } catch (err: any) {
+                                toast.error(err.message || "Failed to update status");
+                              }
+                            }}
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: 8,
+                              background: s.isActive ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)",
+                              border: `1px solid ${s.isActive ? "rgba(239,68,68,0.2)" : "rgba(16,185,129,0.2)"}`,
+                              color: s.isActive ? "#ef4444" : "#10b981",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              marginRight: 8,
+                              transition: "all 0.15s",
+                            }}
+                            onMouseOver={(e) => (e.currentTarget.style.background = s.isActive ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)")}
+                            onMouseOut={(e) => (e.currentTarget.style.background = s.isActive ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)")}
+                          >
+                            {s.isActive ? "Deactivate" : "Activate"}
+                          </button>
+                          <button
+                            onClick={() => { setDeleteId(s._id); setDeleteName(s.name); }}
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: 8,
+                              background: "rgba(239,68,68,0.08)",
+                              border: "1px solid rgba(239,68,68,0.25)",
+                              color: "#ef4444",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              transition: "all 0.15s",
+                            }}
+                            onMouseOver={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
+                            onMouseOut={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -402,10 +467,10 @@ export default function StudentsPage() {
           <form onSubmit={handleImport}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.6 }}>
-                Upload a CSV or Excel (.xlsx, .xls) file. The file should contain column headers: 
+                Upload a CSV or Excel (.xlsx, .xls) file. The file should contain column headers:
                 <strong style={{ color: "var(--text-accent)" }}> studentId, name, email</strong>.
               </p>
-              
+
               <div style={{
                 padding: "24px 14px", border: "2px dashed var(--bg-border)",
                 borderRadius: 12, textAlign: "center", background: "var(--bg-elevated)",
@@ -460,7 +525,7 @@ export default function StudentsPage() {
                 </p>
               </div>
             </div>
-            
+
             {importResults.credentials && importResults.credentials.length > 0 && (
               <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>
                 📥 Credentials CSV has been downloaded automatically.
@@ -490,7 +555,7 @@ export default function StudentsPage() {
         )}
       </Modal>
 
-      {/* Delete Confirm */}
+      {/* Single Delete Confirm */}
       <ConfirmDialog
         isOpen={!!deleteId}
         onClose={() => { setDeleteId(null); setDeleteName(""); }}
@@ -498,6 +563,17 @@ export default function StudentsPage() {
         title="Remove Student"
         message={`Remove ${deleteName || "this student"}? They will no longer be able to login.`}
         confirmLabel="Remove"
+        danger
+      />
+
+      {/* Bulk Delete Confirm */}
+      <ConfirmDialog
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected Students"
+        message={`Are you sure you want to delete ${sel.selectedCount} student${sel.selectedCount !== 1 ? "s" : ""}? This action cannot be undone.`}
+        confirmLabel={bulkDeleting ? "Deleting…" : `Delete ${sel.selectedCount} Student${sel.selectedCount !== 1 ? "s" : ""}`}
         danger
       />
     </div>

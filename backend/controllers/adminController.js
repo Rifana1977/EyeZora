@@ -305,6 +305,24 @@ exports.deleteStudent = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/admin/students/bulk-delete
+ * Body: { ids: string[] }
+ * Hard-delete multiple students at once.
+ */
+exports.bulkDeleteStudents = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids array is required" });
+    }
+    const result = await Student.deleteMany({ _id: { $in: ids } });
+    res.json({ deleted: result.deletedCount, requested: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ─── Admin Monitoring Dashboard ────────────────────────────────────────────────
 
 /**
@@ -335,6 +353,26 @@ exports.getSessionReport = async (req, res) => {
     });
 
     res.json({ session, logs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * DELETE /api/admin/sessions/bulk-delete
+ * Body: { ids: string[] }
+ * Hard-delete multiple exam session records and their proctoring logs.
+ */
+exports.bulkDeleteSessions = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids array is required" });
+    }
+    // Also remove associated proctoring logs
+    await ProctoringLog.deleteMany({ sessionId: { $in: ids } });
+    const result = await ExamSession.deleteMany({ _id: { $in: ids } });
+    res.json({ deleted: result.deletedCount, requested: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -673,6 +711,24 @@ exports.unpublishResults = async (req, res) => {
       message: `Results unpublished for ${result.modifiedCount} submission(s)`,
       modifiedCount: result.modifiedCount,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * DELETE /api/admin/results/bulk-delete
+ * Body: { ids: string[] }
+ * Hard-delete multiple submission (result) records.
+ */
+exports.bulkDeleteSubmissions = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "ids array is required" });
+    }
+    const result = await Submission.deleteMany({ _id: { $in: ids } });
+    res.json({ deleted: result.deletedCount, requested: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -55,16 +55,16 @@ export const authApi = {
       body: JSON.stringify({ identifier, password }),
     }),
 
-  forgotPassword: (email: string) =>
-    request<{ message: string }>(`${API_BASE}/api/auth/student/forgot-password`, {
+  forgotPassword: (studentId: string, email: string) =>
+    request<{ message: string }>(`${API_BASE}/api/auth/forgot-password`, {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ studentId, email }),
     }),
 
-  resetPassword: (token: string, email: string, newPassword: string) =>
-    request<{ message: string }>(`${API_BASE}/api/auth/student/reset-password`, {
+  resetPassword: (token: string, password: string) =>
+    request<{ message: string }>(`${API_BASE}/api/auth/reset-password`, {
       method: "POST",
-      body: JSON.stringify({ token, email, newPassword }),
+      body: JSON.stringify({ token, password }),
     }),
 
   changePassword: (currentPassword: string, newPassword: string) =>
@@ -125,6 +125,31 @@ export const adminApi = {
   deleteStudent: (id: string) =>
     request<any>(`${API_BASE}/api/admin/students/${id}`, { method: "DELETE" }),
 
+  // Bulk delete
+  bulkDeleteStudents: (ids: string[]) =>
+    request<{ deleted: number; requested: number }>(`${API_BASE}/api/admin/students/bulk-delete`, {
+      method: "DELETE",
+      body: JSON.stringify({ ids }),
+    }),
+
+  bulkCancelAssignments: (ids: string[]) =>
+    request<{ cancelled: number; skipped: number; requested: number }>(
+      `${API_BASE}/api/admin/assignments/bulk-cancel`,
+      { method: "DELETE", body: JSON.stringify({ ids }) }
+    ),
+
+  bulkDeleteSessions: (ids: string[]) =>
+    request<{ deleted: number; requested: number }>(`${API_BASE}/api/admin/sessions/bulk-delete`, {
+      method: "DELETE",
+      body: JSON.stringify({ ids }),
+    }),
+
+  bulkDeleteSubmissions: (ids: string[]) =>
+    request<{ deleted: number; requested: number }>(`${API_BASE}/api/admin/results/bulk-delete`, {
+      method: "DELETE",
+      body: JSON.stringify({ ids }),
+    }),
+
   // Assignments
   getAssignments: (params?: {
     search?: string;
@@ -151,8 +176,13 @@ export const adminApi = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
-  cancelAssignment: (id: string) =>
+  deleteAssignment: (id: string) =>
     request<any>(`${API_BASE}/api/admin/assignments/${id}`, { method: "DELETE" }),
+  bulkDeleteAssignments: (assignmentIds: string[]) =>
+    request<any>(`${API_BASE}/api/admin/assignments`, {
+      method: "DELETE",
+      body: JSON.stringify({ assignmentIds }),
+    }),
   getStudentAssignment: (studentId: string) =>
     request<any>(`${API_BASE}/api/admin/assignments/student/${studentId}`),
   bulkAssign: (data: { studentObjectIds: string[]; examId: string; startTime: string; duration: number; notes?: string }) =>

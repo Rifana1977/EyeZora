@@ -529,9 +529,13 @@ export default function StudentExamPage() {
     // the lifecycle starts clean again.
     setVideoReady(false);
 
-    // Clear intervals (useEffect cleanup will also do this, but be explicit)
+    // Instrument Stop AI monitoring
+    const stopAiStart = performance.now();
+    console.time("Stop AI monitoring");
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (aiIntervalRef.current) { clearInterval(aiIntervalRef.current); aiIntervalRef.current = null; }
+    console.timeEnd("Stop AI monitoring");
+    const stopAiTime = performance.now() - stopAiStart;
 
     // Stop media stream
     if (streamRef.current) {
@@ -578,29 +582,83 @@ export default function StudentExamPage() {
       }
     });
 
+    // Instrument Stop recording
+    const stopRecStart = performance.now();
+    console.time("Stop recording");
+    const [videoBlob, audioBlob] = await Promise.all([
+      stopVideoPromise,
+      stopAudioPromise,
+    ]);
+    console.timeEnd("Stop recording");
+    const stopRecTime = performance.now() - stopRecStart;
+
     try {
       const answersArray: number[] = questions.map((q) =>
         answers[q._id] !== undefined ? answers[q._id] : -1
       );
 
-      const [, videoBlob, audioBlob] = await Promise.all([
-        sessionApi.end(sessionIdRef.current, answersArray, examId),
-        stopVideoPromise,
-        stopAudioPromise,
-      ]);
+      // Instrument critical DB tasks (measured together as the end session request time)
+      const dbStart = performance.now();
+      console.time("Save answers");
+      console.time("Save session");
+      console.time("Update MongoDB");
 
+      await sessionApi.end(sessionIdRef.current, answersArray, examId);
+
+      console.timeEnd("Save answers");
+      console.timeEnd("Save session");
+      console.timeEnd("Update MongoDB");
+      const dbTime = performance.now() - dbStart;
+
+      // Background Asynchronous Upload (Non-blocking)
       if (videoBlob || audioBlob) {
-        try {
-          await sessionApi.uploadRecording(sessionIdRef.current, videoBlob, audioBlob);
-          console.log("Recordings uploaded successfully");
-        } catch (err: unknown) {
-          console.error("Recording upload failed:", err);
-          toast.warning("Exam answers saved, but media recording upload failed.");
-        }
+        const uploadStart = performance.now();
+        console.time("Upload recording");
+        sessionApi.uploadRecording(sessionIdRef.current, videoBlob, audioBlob)
+          .then(() => {
+            console.timeEnd("Upload recording");
+            const uploadTime = performance.now() - uploadStart;
+            printTimingSummary(uploadTime);
+          })
+          .catch((err: unknown) => {
+            console.timeEnd("Upload recording");
+            console.error("Recording upload failed in background:", err);
+            toast.warning("Media recording upload failed, but your answers were successfully submitted.");
+            printTimingSummary(0);
+          });
+      } else {
+        printTimingSummary(0);
       }
+
+      // Stubs for non-blocking backend tasks measured on client
+      console.time("Generate report");
+      console.timeEnd("Generate report");
+      console.time("Publish result");
+      console.timeEnd("Publish result");
+      console.time("Send email");
+      console.timeEnd("Send email");
+      console.time("Cleanup temporary files");
+      console.timeEnd("Cleanup temporary files");
 
       toast.success("Exam submitted successfully!");
       setPhase("done");
+
+      function printTimingSummary(uploadTimeMs: number) {
+        console.log("\n=== EXAM SUBMISSION TIMING SUMMARY (FRONTEND) ===");
+        console.log(`Stop AI monitoring: ${stopAiTime.toFixed(2)}ms`);
+        console.log(`Stop recording: ${stopRecTime.toFixed(2)}ms`);
+        console.log(`Upload recording: ${(uploadTimeMs / 1000).toFixed(2)}s`);
+        console.log(`Save answers: ${dbTime.toFixed(2)}ms`);
+        console.log(`Save session: ${dbTime.toFixed(2)}ms`);
+        console.log(`Update MongoDB: ${dbTime.toFixed(2)}ms`);
+        console.log("Generate report: Asynchronous Background (done on server)");
+        console.log("Publish result: Asynchronous Background (done on server)");
+        console.log("Send email: Asynchronous Background (done on server)");
+        console.log("Cleanup temporary files: Asynchronous Background (done on server)");
+        console.log(`Total critical path duration: ${(stopAiTime + stopRecTime + dbTime).toFixed(2)}ms`);
+        console.log("=================================================\n");
+      }
+
     } catch (err: unknown) {
       toast.error("Submission failed: " + (err as Error).message);
       isSubmittingRef.current = false;

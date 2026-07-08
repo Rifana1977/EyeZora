@@ -6,22 +6,28 @@ import { authApi } from "@/lib/api";
 import { toast } from "@/app/components/ui/Toast";
 
 export default function ForgotPasswordPage() {
+  const [studentId, setStudentId] = useState("");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) {
-      toast.error("Please enter your email address");
+    if (!studentId.trim()) {
+      toast.error("Please enter your Student ID");
+      return;
+    }
+    if (!email.trim()) {
+      toast.error("Please enter your registered email address");
       return;
     }
     setLoading(true);
     try {
-      await authApi.forgotPassword(email);
+      await authApi.forgotPassword(studentId.trim(), email.trim());
       setSent(true);
     } catch {
-      // Always show success screen to prevent email enumeration attacks
+      // Always show success screen — never reveal whether details matched.
+      // This prevents user enumeration attacks.
       setSent(true);
     } finally {
       setLoading(false);
@@ -36,7 +42,7 @@ export default function ForgotPasswordPage() {
       justifyContent: "center",
       padding: 20,
     }}>
-      <div className="fade-in" style={{ width: "100%", maxWidth: 440 }}>
+      <div className="fade-in" style={{ width: "100%", maxWidth: 460 }}>
         {/* Brand */}
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <div style={{
@@ -62,21 +68,53 @@ export default function ForgotPasswordPage() {
           </p>
         </div>
 
-        <div className="glass-card" style={{ padding: 32 }}>
+        <div className="glass-card" style={{ padding: 36 }}>
           {!sent ? (
             <>
-              <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24, lineHeight: 1.7, textAlign: "center" }}>
-                Enter the email address registered with your account. We will send you a reset link.
-              </p>
+              {/* Info box */}
+              <div style={{
+                background: "rgba(124,58,237,0.07)",
+                border: "1px solid rgba(124,58,237,0.2)",
+                borderRadius: 10,
+                padding: "12px 16px",
+                marginBottom: 28,
+              }}>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, margin: 0, lineHeight: 1.65 }}>
+                  🔒 Enter your <strong>Student ID</strong> and <strong>registered email address</strong>.
+                  Both must match the same account before a reset link is sent.
+                </p>
+              </div>
 
               <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: 20 }}>
+                {/* Student ID field */}
+                <div style={{ marginBottom: 18 }}>
                   <label style={{
                     display: "block", color: "var(--text-secondary)",
                     fontSize: 12, fontWeight: 600, marginBottom: 8,
                     letterSpacing: "0.05em", textTransform: "uppercase",
                   }}>
-                    Email Address
+                    Student ID
+                  </label>
+                  <input
+                    id="forgot-student-id-input"
+                    className="ez-input"
+                    type="text"
+                    placeholder="e.g. STU001"
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    autoFocus
+                    autoComplete="username"
+                  />
+                </div>
+
+                {/* Email field */}
+                <div style={{ marginBottom: 28 }}>
+                  <label style={{
+                    display: "block", color: "var(--text-secondary)",
+                    fontSize: 12, fontWeight: 600, marginBottom: 8,
+                    letterSpacing: "0.05em", textTransform: "uppercase",
+                  }}>
+                    Registered Email Address
                   </label>
                   <input
                     id="forgot-email-input"
@@ -85,7 +123,7 @@ export default function ForgotPasswordPage() {
                     placeholder="your@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    autoFocus
+                    autoComplete="email"
                   />
                 </div>
 
@@ -102,21 +140,26 @@ export default function ForgotPasswordPage() {
                     fontWeight: 700,
                   }}
                 >
-                  {loading ? "Sending…" : "Send Reset Link →"}
+                  {loading ? "Sending…" : "Send Password Reset Link →"}
                 </button>
               </form>
             </>
           ) : (
-            <div style={{ textAlign: "center" }}>
+            /* Success screen — generic, regardless of match */
+            <div style={{ textAlign: "center", padding: "8px 0" }}>
               <div style={{ fontSize: 56, marginBottom: 16 }}>📧</div>
-              <h2 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
+              <h2 style={{
+                color: "var(--text-primary)", fontSize: 20,
+                fontWeight: 700, marginBottom: 12,
+              }}>
                 Check Your Inbox
               </h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.7 }}>
-                If <strong>{email}</strong> is registered, you will receive a reset link shortly. Check your spam folder too.
+              <p style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.7, marginBottom: 12 }}>
+                If the details you provided are valid, you will receive a
+                password reset link shortly. Please check your spam folder too.
               </p>
-              <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 12 }}>
-                The link expires in 2 hours.
+              <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                The link expires in <strong>15 minutes</strong>.
               </p>
             </div>
           )}

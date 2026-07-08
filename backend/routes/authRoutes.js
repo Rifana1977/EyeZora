@@ -15,13 +15,21 @@ router.post("/admin/login", adminLogin);
 // POST /api/auth/student/login
 router.post("/student/login", studentLogin);
 
-// POST /api/auth/student/forgot-password
+// ── Forgot Password ───────────────────────────────────────────────────────────
+// Primary route (as specified in the new API design)
+router.post("/forgot-password", forgotPassword);
+
+// Backward-compatible alias (keeps existing integrations working)
 router.post("/student/forgot-password", forgotPassword);
 
-// POST /api/auth/student/reset-password
+// ── Reset Password ────────────────────────────────────────────────────────────
+// Primary route (as specified in the new API design)
+router.post("/reset-password", resetPassword);
+
+// Backward-compatible alias
 router.post("/student/reset-password", resetPassword);
 
-// POST /api/auth/student/change-password (must be logged in)
+// ── Change Password (authenticated) ──────────────────────────────────────────
 router.post("/student/change-password", verifyToken, requireStudent, changePassword);
 
 module.exports = router;
