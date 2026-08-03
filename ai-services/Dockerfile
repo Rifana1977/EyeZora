@@ -9,7 +9,8 @@ WORKDIR /app
 # libgomp1         → provides OpenMP threading (used by PyTorch / YOLO)
 # Cleaned up in the same layer to minimise image size.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     libglib2.0-0 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
