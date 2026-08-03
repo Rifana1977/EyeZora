@@ -1,0 +1,70 @@
+services:
+
+  # ── AI Service: FastAPI + OpenCV + YOLO ──────────────────────────────────────
+  ai-services:
+    build:
+      context: ./ai-services
+      dockerfile: Dockerfile
+    container_name: eyezora-ai-services
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - eyezora-net
+    # No .env needed — ai-service has no secrets; all config is internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s   # give YOLO time to load models on first start
+
+  # ── Backend: Node.js + Express + MongoDB Atlas ────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eyezora-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env   # contains MONGO_URI, JWT_SECRET, CLOUDINARY_*, EMAIL_*, AI_SERVICE_URL
+    networks:
+      - eyezora-net
+    depends_on:
+      ai-services:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend: Next.js (standalone) ───────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
+        # For local Docker: browser on host reaches backend at localhost:5000
+        # (port 5000 is mapped above). Change to your public domain in production.
+        NEXT_PUBLIC_API_URL: http://localhost:5000
+    container_name: eyezora-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - eyezora-net
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ── Shared Docker Network ─────────────────────────────────────────────────────
+# All three services communicate using their service names as DNS hostnames.
+# e.g. backend → http://ai-services:8000  (resolved by Docker DNS, not DNS server)
+networks:
+  eyezora-net:
+    driver: bridge

@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+.env
+.env.*
+exam_logs
+temp_uploads
+scratch
+__pycache__
+*.pyc
+.gitignore
+README.md
+test-flow.js
+test.js
+dns-test.js

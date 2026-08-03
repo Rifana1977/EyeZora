@@ -15,8 +15,8 @@
 - Live webcam monitoring
 - Automatic exam submission on timeout
 - Real-time AI violation alerts
-- voice recording
-- tab switch alert
+- Voice recording
+- Tab switch alert
 
 ### 👨‍💼 Admin Portal
 - Student management
@@ -54,17 +54,17 @@
 ### Backend
 - Node.js
 - Express.js
-- MongoDB
+- MongoDB Atlas
 - JWT Authentication
 - Nodemailer
 - Multer
+- Cloudinary
 
 ### AI Service
 - FastAPI
 - Python
 - OpenCV
-- YOLOv11
-- MediaPipe
+- YOLOv8 / YOLOv11
 - PyTorch
 
 ---
@@ -74,27 +74,162 @@
 ```
 EyeZora/
 │
-├── frontend/          # Next.js Frontend
-├── backend/           # Express Backend APIs
+├── frontend/          # Next.js Frontend (App Router + TypeScript)
+│   ├── app/
+│   ├── lib/
+│   ├── public/
+│   ├── Dockerfile
+│   └── package.json
+│
+├── backend/           # Node.js + Express API
 │   ├── routes/
 │   ├── controllers/
 │   ├── models/
-│   └── main.py        # FastAPI AI Service
+│   ├── middleware/
+│   ├── Dockerfile
+│   └── package.json
+│
+├── ai-services/       # FastAPI + YOLO AI Proctoring Service
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── *.pt           # YOLO model weights
+│
+├── docker-compose.yml # Orchestrates all three services
 └── README.md
 ```
 
 ---
 
-# ⚙️ Installation
+# 🐳 Docker Quick Start (Recommended)
 
 ## Prerequisites
 
-- Node.js 18+
-- Python 3.10+
-- MongoDB
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
 - Git
 
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/Rifana1977/EyeZora.git
+cd EyeZora
+```
+
+## 2. Configure Environment Variables
+
+The backend `.env` file is already present at `backend/.env`. Verify it contains your real credentials:
+
+```env
+MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/
+JWT_SECRET=your_jwt_secret_here
+PORT=5000
+FRONTEND_URL=http://localhost:3000
+
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+EMAIL_FROM=your@gmail.com
+EMAIL_PASS=your_app_password
+
+RESET_TOKEN_EXPIRY_HOURS=2
+AI_SERVICE_URL=http://ai-services:8000
+```
+
+> **Note**: `AI_SERVICE_URL=http://ai-services:8000` is the Docker service name. Do not change this value when running with Docker Compose.
+
+## 3. Build and Start All Services
+
+```bash
+docker compose up --build
+```
+
+This command will:
+1. Build the `ai-services` image (installs PyTorch, YOLO, OpenCV)
+2. Build the `backend` image (installs Node.js packages)
+3. Build the `frontend` image (compiles Next.js)
+4. Start all three services on the shared `eyezora-net` Docker network
+
+> ⏳ **First build takes 5–15 minutes** due to PyTorch and YOLO downloads (~2GB). Subsequent builds are fast due to Docker layer caching.
+
+## 4. Access the Application
+
+| Service    | URL                    |
+|------------|------------------------|
+| Frontend   | http://localhost:3000  |
+| Backend    | http://localhost:5000  |
+| AI Service | http://localhost:8000  |
+
+## 5. Seed the Admin Account (first time only)
+
+```bash
+docker compose exec backend node scripts/seedAdmin.js
+```
+
+Default credentials:
+- **Email**: `admin@eyezora.com`
+- **Password**: `Admin@123`
+
+> ⚠️ Change this password immediately after first login.
+
 ---
+
+# 🐳 Docker Commands Reference
+
+### Start all services (foreground)
+```bash
+docker compose up --build
+```
+
+### Start all services (background / detached)
+```bash
+docker compose up --build -d
+```
+
+### View live logs (all services)
+```bash
+docker compose logs -f
+```
+
+### View logs for a specific service
+```bash
+docker compose logs -f backend
+docker compose logs -f ai-services
+docker compose logs -f frontend
+```
+
+### Stop all services
+```bash
+docker compose down
+```
+
+### Restart a single service
+```bash
+docker compose restart backend
+docker compose restart ai-services
+docker compose restart frontend
+```
+
+### Rebuild a single service after code changes
+```bash
+docker compose up --build backend
+```
+
+### Open a shell inside a container
+```bash
+docker compose exec backend sh
+docker compose exec ai-services bash
+```
+
+---
+
+# ⚙️ Manual Installation (without Docker)
+
+## Prerequisites
+
+- Node.js 20+
+- Python 3.11+
+- Git
 
 ## 1. Clone Repository
 
@@ -103,39 +238,27 @@ git clone https://github.com/Rifana1977/EyeZora.git
 cd EyeZora
 ```
 
----
-
 ## 2. Start AI Service
 
 ```bash
-cd backend
-
+cd ai-services
 pip install -r requirements.txt
-
 uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
-
----
 
 ## 3. Start Backend
 
 ```bash
 cd backend
-
 npm install
-
 npm run dev
 ```
-
----
 
 ## 4. Start Frontend
 
 ```bash
 cd frontend
-
 npm install
-
 npm run dev
 ```
 
@@ -143,19 +266,20 @@ npm run dev
 
 # 🔑 Environment Variables
 
-Create a `.env` file inside the `backend` directory.
+Create / update `backend/.env`:
 
 ```env
 MONGO_URI=
 JWT_SECRET=
-EMAIL_USER=
+EMAIL_FROM=
 EMAIL_PASS=
 
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 
-AI_SERVICE_URL=http://127.0.0.1:8000
+AI_SERVICE_URL=http://127.0.0.1:8000    # local dev
+# AI_SERVICE_URL=http://ai-services:8000  # Docker
 ```
 
 ---
@@ -166,7 +290,6 @@ Run the integration test:
 
 ```bash
 cd backend
-
 node test-flow.js
 ```
 
@@ -192,6 +315,7 @@ node test-flow.js
 - AI-Based Proctoring
 - Session Monitoring
 - Secure Password Hashing
+- Non-root Docker containers
 
 ---
 
@@ -208,4 +332,3 @@ node test-flow.js
 This project is developed for educational purposes.
 
 <img width="1610" height="26" alt="image" src="https://github.com/user-attachments/assets/25f06dcc-26d9-49ce-bf97-95db5994a37e" />
-

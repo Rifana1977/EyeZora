@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+events.log
+test.py
+.gitignore
+README.md
